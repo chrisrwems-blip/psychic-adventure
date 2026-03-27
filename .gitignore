@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.db
+.env
+
+# Node
+node_modules/
+dist/
+
+# Uploads
+backend/uploads/
+backend/annotated/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
