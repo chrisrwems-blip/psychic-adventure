@@ -179,3 +179,17 @@ class SubmittalRegisterItem(Base):
 
     project = relationship("Project")
     submittal = relationship("Submittal")
+
+
+class FindingFeedback(Base):
+    __tablename__ = "finding_feedback"
+
+    id = Column(Integer, primary_key=True, index=True)
+    submittal_id = Column(Integer, ForeignKey("submittals.id"))
+    finding_type = Column(String(100))  # e.g., "cable_undersized", "missing_cutsheets"
+    check_name = Column(String(255))
+    action = Column(String(30))  # "agreed", "dismissed", "modified"
+    engineer_notes = Column(Text)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    submittal = relationship("Submittal", backref="feedback")

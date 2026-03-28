@@ -255,6 +255,30 @@ def run_full_review(db: Session, submittal_id: int, has_spec: bool = False) -> d
                     recommendation="Verify UL listing for this equipment. IEC-only certification is not acceptable for NEC installations.",
                 ))
 
+    # --- Step 5b: Coordination analysis (if topology available) ---
+    try:
+        from app.services.coordination import run_coordination_analysis
+        coord_findings = run_coordination_analysis(all_equipment, topology)
+        cross_ref_findings.extend(coord_findings)
+    except ImportError:
+        pass  # coordination.py not yet built
+
+    # --- Step 5c: Auto-trigger vision analysis in background ---
+    try:
+        from app.services.vision_batch import start_vision_analysis
+        from app.services.vision_analyzer import is_vision_available
+        if is_vision_available().get("available"):
+            start_vision_analysis(submittal_id)
+    except Exception:
+        pass  # Vision not available — skip silently
+
+    # --- Step 5d: Apply pattern learning (if available) ---
+    try:
+        from app.services.learning import apply_learning
+        cross_ref_findings = apply_learning(cross_ref_findings, db)
+    except (ImportError, Exception):
+        pass  # Learning not yet built or no feedback data
+
     # Deduplicate cross-ref by core issue
     seen_xref = set()
     unique_xref = []
