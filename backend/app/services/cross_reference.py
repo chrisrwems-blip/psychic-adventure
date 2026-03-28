@@ -87,6 +87,7 @@ def run_cross_reference(
     findings.extend(_check_ul_listing_per_cutsheet(pages))
     findings.extend(_check_missing_drawing_views(pages))
     findings.extend(_check_fuse_schedule(pages))
+    findings.extend(_check_cable_congestion(equipment, pages))
 
     return findings
 
@@ -903,20 +904,46 @@ def _check_fuse_schedule(pages: Optional[list]) -> list[CrossRefFinding]:
     return findings
 
 
+
 # ---------------------------------------------------------------------------
-#  Helpers
+# 21. Cable Congestion / Cable Way Check — NEW
 # ---------------------------------------------------------------------------
 
-def _parse_amps(val) -> Optional[int]:
-    if not val:
-        return None
-    m = re.search(r'(\d+)\s*kcmil', str(val).lower())
-    if m:
-        return m.group(1)
-    m = re.search(r'#?(\d+/\d+)\s*awg', str(val).lower())
-    if m:
-        return m.group(1)
-    m = re.search(r'#?(\d{1,2})\s*(?:awg)?', str(val).lower())
-    if m:
-        return m.group(1)
-    return None
+def _check_cable_congestion(equipment: list, pages: Optional[list]) -> list[CrossRefFinding]:
+    """Flag panels where high circuit density creates cable way congestion risk."""
+    if not pages:
+        return []
+
+    findings = []
+
+    for page_data in pages:
+        page_num = page_data["page"]
+        text_lower = page_data.get("text_lower", "")
+
+        if "cable way" not in text_lower and "cable tray" not in text_lower:
+            continue
+
+        cable_way_count = text_lower.count("cable way")
+        q_breakers = re.findall(r'Q\d+[A-Z]?', page_data.get("text", ""))
+        unique_qs = len(set(q_breakers))
+
+        if unique_qs > 16 and cable_way_count > 0:
+            findings.append(CrossRefFinding(
+                finding_type="cable_congestion",
+                severity="major",
+                equipment_1=f"Panel Page {page_num}",
+                equipment_2=None,
+                page_number=page_num,
+                description=(
+                    f"Page {page_num}: {unique_qs} breaker designations with {cable_way_count} "
+                    f"cable way reference(s). High density of outgoing circuits — verify "
+                    f"adequate cable way space for routing, bending radius, and maintenance access."
+                ),
+                reference_code="Constructability",
+                recommendation=(
+                    "Request cable way cross-section dimensions and fill calculations. "
+                    "Verify space for all whips with proper bending radius."
+                ),
+            ))
+
+    return findings
