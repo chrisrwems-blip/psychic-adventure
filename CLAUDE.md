@@ -1,26 +1,156 @@
-# CLAUDE.md — Project Context
+# CLAUDE.md — Armada Systems Inc
 
-## User Profile
-- Electrical engineer, NOT a software engineer
-- Designs modular data centers
-- Does not know terminal/git — always provide exact copy-paste commands
-- Always give the full path starting from `C:\Users\chris\psychic-adventure`
-- Uses Windows + PowerShell (not CMD)
-- Currently testing with a 480-page ABB submittal for Armada Leviathan MDC
+## Company & Project Context
 
-## Project: DC Submittal Review Platform
-One-stop shop for EEs reviewing submittals for modular data centers.
-Upload PDFs → automated review → mark up PDF → generate RFI emails → track comments.
+**Armada Systems Inc** (Armada.ai) designs and manufactures modular, prefabricated data centers. The flagship product is the **Leviathan** — a factory-built, transportable data center unit.
 
-## Key Technical Decisions
+The primary consulting engagement is with **J. Dunton Associates Ltd (JDA)**, a UK-based firm, on the **Leviathan project**.
 
-### Electrical Engineering
-- **AFC estimation**: Utility = 42kA (infinite bus, typical 2000kVA MV xfmr, 5.75%Z). Generator = 20kA (~12% Xd"). With interlocked breakers (NOT paralleled), AFC = max(utility, generator), NOT the sum. Only true paralleling switchgear adds contributions.
-- **Metric cables**: This is a European/ABB submittal using mm² notation (300mm², 150mm²). Must convert to AWG equivalent for NEC ampacity checks.
-- **ABB equipment format**: E6.2H 4000 (Emax 2 ACB), XT7H 1000 (Tmax XT MCCB), Sn=27.78[kVA] (apparent power notation). Not all Sn= values are transformers — chillers, pumps, power shelves, racks use Sn= for their load draw.
-- **AFCI/GFCI**: Valid check, but check ONCE for the document — not every breaker. IT spaces are exempt. Only relevant for dwelling units, bathrooms, kitchens if they exist in the facility.
-- **Spec-dependent checks**: Skip unless a spec document is uploaded. The tool should be spec-agnostic by default.
-- **SLD topology**: Interlocked breakers between Source A (utility) and Source B (generator) — only one source at a time, never paralleled in normal operation.
+The user is **Chris**, an engineer at Armada involved in electrical design, submittal reviews, site assessments, and client-facing technical documentation.
+
+---
+
+## Leviathan Reference Specifications
+
+Use these as the baseline for any Leviathan-related work. Do not use generic data center assumptions.
+
+### System Envelope
+- **IT Load**: 1.77 MW per Leviathan
+- **Total Cooling Capacity**: 2.2 MW per Leviathan
+- **Footprint**: 36,300 mm × 13,600 mm (~119 ft × 45 ft) per unit
+- **Zones**: IT zone, electrical plant zone, mechanical plant zone
+- **Chiller Placement**: Adjacent to mechanical plant zone; requires airflow clearance on all sides
+
+### Power Architecture
+- **Utility Interface**: 480V / 60Hz
+- **Distribution**: Modular UPS-backed power distribution
+- **Compute Racks**: 8× racks at 200 kW each
+- **Network Racks**: 4× racks at 42.5 kW each
+
+### Cooling Architecture
+- **Topology**: Redundant N+1 chiller-driven, closed-loop (no onsite water supply needed)
+- **Cooling Ratio**: 80% liquid / 20% air
+- **Method**: Direct-to-chip liquid cooling for compute; air cooling for ambient
+- **Heat Rejection**: Air-cooled condensers (no cooling towers)
+
+### IT Architecture
+- **Rack Standard**: OCP ORv3-based racks with blind-mate busbar and manifold connections
+- **GPU Support**: NVIDIA GB300 (576 GPUs/unit), NVL72 / HGX B300 / HGX B200 (512 GPUs/unit), AMD Instinct
+- **Networking**: 800 Gb/s InfiniBand (NDR) and Spectrum-X capable
+- **Clustering**: NVIDIA Reference Architecture compliant; pod = 4× Leviathans
+
+---
+
+## Electrical Engineering Domain
+
+### Primary Code References
+- **NEC (NFPA 70)**: Articles 220, 230, 240, 250, 310, 408, 450, 480, 645, 700, 701, 702, 706, Chapter 9 Tables
+- **UL 2755**: Modular Data Centers standard — applies to factory-built, transportable units
+- **NFPA 72**: Fire alarm; **NFPA 101**: Life safety; **IFC**: International Fire Code
+- **ASHRAE**: Climate zone references for cooling design
+- **IBC/ASCE 7**: Seismic and wind loading
+
+### Power Distribution Chain
+Utility/Generator → Main Switchgear → ATS → UPS → PDU → RPP/Panel → Rack PDU → IT Load
+
+### Key Design Considerations
+- Redundancy topologies: N, N+1, 2N, 2(N+1)
+- K-factor transformers for harmonic-rich IT loads (K-13 or K-20)
+- Voltage drop targets: <2% branch, <3% feeder, <5% total
+- Always cite specific NEC articles when making code-driven decisions
+- Space constraints are critical — everything fits in a prefab enclosure
+- UL 2755 compliance implications for every electrical decision
+
+### Common Calculations
+- Load calculations (NEC Art. 220 demand factors, 20-30% spare capacity)
+- Conductor sizing (NEC Table 310.16, temperature/bundling derating)
+- Voltage drop: V_drop = (2 × L × I × R) / 1000 (single-phase); √3 factor for three-phase
+- Short-circuit: MVA method or point-to-point; AIC ratings must meet available fault current
+- Conduit fill: NEC Ch. 9 Table 1 (40% for 3+ conductors)
+- Battery/UPS runtime: Account for end-of-life capacity (80% nameplate) and temperature derating
+
+---
+
+## Document & Workflow Standards
+
+### RFIs
+- Numbering format: `ARM-RFI-XXXX` (auto-incrementing per project)
+- Fields: project, date, from/to, discipline, priority, response-required-by date
+- Disciplines: Electrical, Mechanical, Structural, Civil, Fire, Controls
+- Status tracking: Open → Closed → Superseded
+
+### Transmittals
+- Numbering format: `ARM-TX-XXXX`
+- Document status options: For Review, For Approval, For Construction, As-Built, For Information
+- Include document table with number, title, revision, status
+
+### Submittal Reviews
+- Process client comment registers (Excel/CSV/PDF)
+- Response categories: Acknowledged, Noted, Clarification Required, Design Change, Rejected
+- Group by discipline, prioritize Critical/High first
+- Flag items needing engineering review vs. straightforward responses
+- Status codes: Open, Responded, Closed, Deferred
+- Multi-round tracking (1st round, 2nd round)
+- Never modify original client comment text
+- Flag confidential/IP-sensitive responses for Chris's review before sending
+
+### Meeting Minutes
+- Sections: Attendees, Agenda Items, Key Decisions, Action Items, Open Questions, Next Steps
+- Action items need: Owner, Task, Due Date, Priority, Status
+- Flag incomplete items (missing owner or deadline)
+- Tone: Professional but not stuffy — easy to read and actionable
+
+### Site Assessments
+- 9 assessment categories: Site Access, Footprint/Ground Works, Electrical Infrastructure, Cooling/Mechanical, Networking, Environmental, Regulatory, Security, Operational Readiness
+- Always identify critical-path blockers (utility power is typically #1, 6-18 months lead)
+- Every checklist item should define what "done" looks like
+- Output as .docx (print-ready) and/or .xlsx (tracking spreadsheet)
+
+---
+
+## One-Line Diagram Conventions
+
+- A-feed: Blue (#0066CC), B-feed: Red (#CC0000), Common: Green (#009900)
+- Layout: Top-to-bottom hierarchy (Utility → Switchgear → Transformers → UPS → Busway → PDU → Racks)
+- Symbols: IEC 60617 standard (UL/ANSI available on request)
+- Always include voltage labels at each transformation stage
+- Title block: Project, Revision, Date, Designer initials
+- Canvas: 1400×900px SVG for typical 2N topology
+
+---
+
+## Client Context
+
+- **JDA (J. Dunton Associates Ltd)**: UK-based consulting firm, primary engagement partner on Leviathan
+- **WinDC / MCS**: Data center operator clients with standardized comment review processes
+- Submittal review SLA: 5-7 business days for 1st round; expedited for Critical items
+- Tone with clients: Professional, technical, solution-focused; acknowledge all comments; clear rationale for any rejections
+- AS/NZS standards referenced where relevant (some projects have Australian scope)
+
+---
+
+## Coding Conventions
+
+- When building tools for Armada workflows, keep the domain language consistent with the specs above
+- Prefer TypeScript for web tooling; Python for data processing and engineering calculations
+- Structure repos with clear separation: `/src`, `/docs`, `/templates`, `/tests`
+- Keep generated documents (.docx, .xlsx) in `/output` or `/generated` — don't commit them to main
+- Use meaningful commit messages referencing the Armada workflow (e.g., "feat: add NEC 310.16 lookup to conductor sizing module")
+
+---
+
+## Things to Flag for Chris
+
+- Any design change that affects capacity, layout, or modular assembly sequence
+- Code or standard interpretation questions
+- Vendor constraints or long-lead equipment impacts
+- Cost or schedule implications
+- Conflicts between disciplines
+- Confidential or IP-sensitive content before client distribution
+
+---
+
+## DC Submittal Review Platform — Tool-Specific Context
 
 ### Review Philosophy
 - The goal is 99% of the review done by the tool. Engineer just sanity-checks.
@@ -29,29 +159,33 @@ Upload PDFs → automated review → mark up PDF → generate RFI emails → tra
 - NOT vague: "Related content found, verify..." is useless
 - One finding per issue per document. NOT one per page.
 - Comments only for critical/major issues. Minor/info = results only, no comment clutter.
-- The 480-page submittal should produce 20-50 actionable comments, not 1832.
+
+### Electrical Engineering — Tool Decisions
+- **AFC estimation**: Utility = 42kA (infinite bus, typical 2000kVA MV xfmr, 5.75%Z). Generator = 20kA (~12% Xd"). With interlocked breakers (NOT paralleled), AFC = max(utility, generator), NOT the sum.
+- **Metric cables**: Use IEC 60364 ampacity tables directly. Do NOT convert mm² to AWG for NEC lookup — the conversion is lossy and dangerous.
+- **ABB equipment format**: E6.2H 4000 (Emax 2 ACB), XT7H 1000 (Tmax XT MCCB), Sn=27.78[kVA] (apparent power notation). Not all Sn= values are transformers — chillers, pumps, power shelves use Sn= for their load draw.
+- **AFCI/GFCI**: Valid check, but check ONCE for the document — not every breaker. IT spaces are exempt.
+- **Spec-dependent checks**: Skip unless a spec document is uploaded.
+- **SLD topology**: Interlocked breakers between Source A (utility) and Source B (generator) — only one source at a time, never paralleled in normal operation.
+
+### What the Engineer Actually Reviews (from real 42-comment review)
+1. **SLD vs panel schedule consistency** — #1 issue
+2. **UL listing / NEC vs IEC** — Every piece must be UL listed for US installation
+3. **Constructability** — Cable routing space, cable entry cutouts, through-wall details
+4. **Naming consistency** — Equipment tags must be logical and consistent
+5. **Missing information** — Frame sizes, trip settings, PQM locations, fuse schedules
+6. **Engineering questions** — Why different kAIC on identical incomers?
+7. **Specific errors/typos** — Catch obvious mistakes
 
 ### Frontend/UX
 - "Mark Up PDF" button should NOT trigger download — it generates markup and switches to View PDF tab
 - Only the "Download Marked Up PDF" button triggers download
 - Review summary dashboard should persist across page refreshes
 - Sort by severity is important — critical first
+- Auto-detect equipment type — no manual selection needed
 
 ### Running the App
 - Double-click "DC Submittal Review.bat" (shows terminal) or "DC Submittal Review.vbs" (hidden)
 - Backend: Python FastAPI on port 8000
 - Frontend: Vite React on port 5173
-- Python 3.14 on user's machine — need unpinned deps (>=) not pinned (==) to avoid Rust compilation issues
-
-## What the Engineer Actually Reviews (from real 42-comment review)
-Priority order based on actual review comments:
-1. **SLD vs panel schedule consistency** — #1 issue. Frame sizes, trip ratings, breaker existence, metering locations must match between SLD and detailed schedules
-2. **UL listing / NEC vs IEC** — Every piece of equipment must be UL listed for US installation. Flag metric sizing, CPC terminology, IEC-only certifications
-3. **Constructability** — Cable routing space, cable entry cutouts, through-wall details, shipping splits
-4. **Naming consistency** — Equipment tags must be logical, consistent between SLD and schedules, and make sense as field labels
-5. **Missing information** — Frame sizes, trip settings, PQM locations, fuse schedules
-6. **Engineering questions** — Why different kAIC on identical incomers? Which source is normal for ATS?
-7. **Specific errors/typos** — Catch obvious mistakes
-
-## Branch
-All work on: `claude/submittal-review-platform-tmhtv`
+- Python 3.14 on user's machine — need unpinned deps (>=) not pinned (==)
