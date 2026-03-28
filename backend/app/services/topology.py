@@ -210,23 +210,37 @@ def _extract_sld_relationships(page_data: dict, equipment: list) -> list:
                         # This outgoing feeds that incoming
                         relationships.append((designation, other_eq.designation))
 
-    # Pattern: breakers listed under a bus section → bus feeds those breakers
-    # Look for bus/busbar references followed by breaker lists
-    bus_panels = [eq for eq in page_equipment if eq.equipment_type == "panel" and eq.amperage]
+    # Pattern: Use INCOMING/OUTGOING labels to establish hierarchy
+    # INCOMING breakers are fed FROM the bus, OUTGOING breakers feed TO loads
+    # The bus (or largest incomer) is the parent of all outgoing breakers
     breakers = [eq for eq in page_equipment if eq.equipment_type == "breaker"]
 
+    incoming = []
+    outgoing = []
+    for bkr in breakers:
+        context = (bkr.raw_text or "").lower()
+        if "incoming" in context or "incomer" in context:
+            incoming.append(bkr)
+        elif "outgoing" in context:
+            outgoing.append(bkr)
+
+    # If we have incomers and outgoing on the same page, incomers feed bus, bus feeds outgoing
+    if incoming and outgoing:
+        # Use the largest incomer as the parent
+        largest_incomer = max(incoming, key=lambda b: _parse_amps(b.trip_rating or b.frame_size) or 0)
+        for out_bkr in outgoing:
+            relationships.append((largest_incomer.designation, out_bkr.designation))
+
+    # Also link bus panels to outgoing breakers (if bus panel exists)
+    bus_panels = [eq for eq in page_equipment if eq.equipment_type == "panel" and eq.amperage]
     for bus in bus_panels:
         bus_amps = _parse_amps(bus.amperage)
         if not bus_amps:
             continue
-        # Breakers with smaller ratings on same page likely feed from this bus
-        for bkr in breakers:
-            bkr_amps = _parse_amps(bkr.trip_rating or bkr.frame_size)
-            if bkr_amps and bkr_amps < bus_amps:
-                relationships.append((bus.designation, bkr.designation))
-
-    # ABB-specific: Q-designations establish hierarchy
-    # Larger Q numbers are typically downstream of smaller ones in ABB SLDs
+        for out_bkr in outgoing:
+            out_amps = _parse_amps(out_bkr.trip_rating or out_bkr.frame_size) or 0
+            if 0 < out_amps < bus_amps:
+                relationships.append((bus.designation, out_bkr.designation))
     q_breakers = []
     for eq in page_equipment:
         if eq.equipment_type != "breaker":
@@ -269,7 +283,11 @@ def _extract_schedule_relationships(page_data: dict, equipment: list, nodes: dic
 
 
 def _infer_page_hierarchy(equipment: list) -> list:
-    """Infer bus → breaker relationships from equipment on the same page."""
+    """Infer bus → breaker relationships from equipment on the same page.
+
+    Uses INCOMING/OUTGOING labels from breaker raw text to determine direction.
+    Does NOT assume small = downstream — that creates backwards relationships.
+    """
     relationships = []
 
     # Group by page
@@ -282,18 +300,32 @@ def _infer_page_hierarchy(equipment: list) -> list:
         panels = [eq for eq in page_equip if eq.equipment_type == "panel" and eq.amperage]
         breakers = [eq for eq in page_equip if eq.equipment_type == "breaker"]
 
-        if not panels or not breakers:
+        if not breakers:
             continue
 
-        # The largest-rated panel on a page likely feeds the breakers
-        panels_sorted = sorted(panels, key=lambda p: _parse_amps(p.amperage) or 0, reverse=True)
-        main_panel = panels_sorted[0]
-        main_amps = _parse_amps(main_panel.amperage) or 0
-
+        # Classify breakers by their INCOMING/OUTGOING labels
+        incoming = []
+        outgoing = []
         for bkr in breakers:
-            bkr_amps = _parse_amps(bkr.trip_rating or bkr.frame_size) or 0
-            if 0 < bkr_amps < main_amps:
-                relationships.append((main_panel.designation, bkr.designation))
+            context = (bkr.raw_text or "").lower()
+            if "incoming" in context or "incomer" in context:
+                incoming.append(bkr)
+            elif "outgoing" in context or "sub-outgoing" in context:
+                outgoing.append(bkr)
+
+        # If we have labeled breakers, use them
+        if incoming and outgoing:
+            largest_incomer = max(incoming, key=lambda b: _parse_amps(b.trip_rating or b.frame_size) or 0)
+            for out_bkr in outgoing:
+                relationships.append((largest_incomer.designation, out_bkr.designation))
+
+        # Link bus panels to outgoing breakers only
+        for bus in panels:
+            bus_amps = _parse_amps(bus.amperage) or 0
+            for out_bkr in outgoing:
+                out_amps = _parse_amps(out_bkr.trip_rating or out_bkr.frame_size) or 0
+                if 0 < out_amps <= bus_amps:
+                    relationships.append((bus.designation, out_bkr.designation))
 
     return relationships
 
