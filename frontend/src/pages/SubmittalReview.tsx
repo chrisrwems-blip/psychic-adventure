@@ -399,20 +399,19 @@ export default function SubmittalReview() {
                             </div>
                           )}
 
-                          {/* Page link */}
+                          {/* Page link — always opens original PDF, not marked-up */}
                           {pageNum && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
+                                setViewingMarkup(false); // Switch to original PDF
                                 setActiveTab('pdf');
-                                // PDF viewers can jump to page with #page=N
                                 setTimeout(() => {
                                   const iframe = document.querySelector('iframe[title]') as HTMLIFrameElement;
                                   if (iframe) {
-                                    const baseUrl = iframe.src.split('#')[0];
-                                    iframe.src = baseUrl + '#page=' + pageNum;
+                                    iframe.src = getSubmittalPdfUrl(Number(submittalId)) + '#page=' + pageNum;
                                   }
-                                }, 100);
+                                }, 200);
                               }}
                               className="text-xs text-blue-600 hover:underline font-medium"
                             >
