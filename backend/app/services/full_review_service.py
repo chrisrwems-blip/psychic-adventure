@@ -140,25 +140,23 @@ def run_full_review(db: Session, submittal_id: int, has_spec: bool = False) -> d
     # --- Step 2: Extract all equipment ---
     all_equipment = extract_all_equipment(pages)
 
-    # --- Step 3: Determine which checker types to run ---
-    # Always run the user-selected type
-    checker_types_to_run = {submittal.equipment_type}
+    # --- Step 3: Auto-detect which checker types to run ---
+    # No user selection needed — the tool figures it out from the content.
+    checker_types_to_run = set()
 
-    # Run checkers for every equipment type discovered in the document
+    # Add checkers for every equipment type discovered in the document
     for eq in all_equipment:
         mapped = EQUIPMENT_TO_CHECKER.get(eq.equipment_type)
         if mapped and mapped in CHECKER_REGISTRY:
             checker_types_to_run.add(mapped)
 
-    # For large submittals, auto-detect which checkers to run based on page classification
-    # If there are panel schedules, run the panelboard checker. If SLDs, run switchgear. Etc.
+    # Add checkers based on page classification
     PAGE_TYPE_TO_CHECKERS = {
         "single_line_diagram": ["switchgear", "transformer", "cable", "panelboard"],
         "panel_schedule": ["panelboard"],
         "cable_schedule": ["cable"],
         "equipment_schedule": ["switchgear", "transformer", "ups", "generator", "ats"],
         "load_schedule": ["switchgear", "transformer"],
-        "cut_sheet": [],  # Don't auto-add from cut sheets — too generic
     }
     for page_type, count in page_summary.items():
         if count > 0 and page_type in PAGE_TYPE_TO_CHECKERS:
@@ -166,10 +164,28 @@ def run_full_review(db: Session, submittal_id: int, has_spec: bool = False) -> d
                 if ct in CHECKER_REGISTRY:
                     checker_types_to_run.add(ct)
 
-    # For any submittal over 50 pages, also check for common DC equipment
-    if len(pages) > 50:
-        for ct in ["switchgear", "panelboard", "cable", "transformer"]:
-            checker_types_to_run.add(ct)
+    # Add checkers based on keywords found in full text
+    KEYWORD_TO_CHECKER = {
+        "ups": ["ups"], "generator": ["generator", "genset"],
+        "ats": ["ats", "transfer switch"], "cooling": ["chiller", "crah", "crac", "cooling"],
+        "battery": ["battery", "bess", "vrla", "lithium"],
+        "bus_duct": ["busway", "bus duct", "busbar trunking"],
+        "sts": ["static transfer", "sts"],
+        "pdu": ["pdu", "power distribution unit"],
+    }
+    full_text_lower = full_text.lower()
+    for checker_type, keywords in KEYWORD_TO_CHECKER.items():
+        if any(kw in full_text_lower for kw in keywords):
+            if checker_type in CHECKER_REGISTRY:
+                checker_types_to_run.add(checker_type)
+
+    # Always include base electrical checks for any submittal
+    for ct in ["switchgear", "panelboard", "cable", "transformer"]:
+        checker_types_to_run.add(ct)
+
+    # If user selected a specific type, include it too (backward compatible)
+    if submittal.equipment_type and submittal.equipment_type in CHECKER_REGISTRY:
+        checker_types_to_run.add(submittal.equipment_type)
 
     # --- Step 4: Run each checker type ONCE against the full document ---
     all_findings = []
