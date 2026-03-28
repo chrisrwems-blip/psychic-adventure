@@ -354,9 +354,31 @@ def _propagate_fault_current(nodes: dict, root_nodes: list, equipment: list):
         utility_afc = 42.0   # kA — typical 2000kVA MV transformer, 5.75% Z, infinite bus primary
         generator_afc = 20.0  # kA — typical 2000kW diesel genset, ~12% Xd"
 
+        # With ATS or interlocked breakers (kirk-key, electrically interlocked),
+        # utility and generator are NEVER paralleled — only one source feeds
+        # the bus at a time. AFC at the bus is the HIGHER of the two sources,
+        # not the sum.
+        #
+        # Only true paralleling switchgear (closed-transition transfer, generator
+        # paralleling for load sharing) would result in summed contributions.
+        #
+        # Check for paralleling indicators
+        has_paralleling = any(
+            "paralleling" in (n.description or "").lower() or
+            "parallel operation" in (n.description or "").lower() or
+            "closed transition" in (n.description or "").lower() or
+            "closed-transition" in (n.description or "").lower()
+            for n in nodes.values()
+        )
+
         if has_utility_source and has_generator_source:
-            # Both sources can contribute through bus tie
-            service_afc_kA = utility_afc + generator_afc  # ~62kA
+            if has_paralleling:
+                # Rare: paralleling switchgear — both sources contribute simultaneously
+                service_afc_kA = utility_afc + generator_afc
+            else:
+                # Normal ATS operation: only one source at a time
+                # AFC = higher of the two (utility is typically higher)
+                service_afc_kA = max(utility_afc, generator_afc)
         elif has_generator_source:
             service_afc_kA = generator_afc
         else:

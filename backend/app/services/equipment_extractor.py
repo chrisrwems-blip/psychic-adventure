@@ -76,28 +76,48 @@ def extract_all_equipment(pages: list[dict]) -> list[ExtractedEquipment]:
         if page_type in ("cover_sheet", "table_of_contents"):
             continue
 
-        equipment.extend(_extract_breakers(text, text_lower, page_num))
-        equipment.extend(_extract_transformers(text, text_lower, page_num))
-        equipment.extend(_extract_panels(text, text_lower, page_num, page_type))
-        equipment.extend(_extract_cables(text, text_lower, page_num))
-        equipment.extend(_extract_generators(text, text_lower, page_num))
-        equipment.extend(_extract_ups_systems(text, text_lower, page_num))
-        equipment.extend(_extract_ats_units(text, text_lower, page_num))
-        equipment.extend(_extract_pdus(text, text_lower, page_num))
+        new_items = []
+        new_items.extend(_extract_breakers(text, text_lower, page_num))
+        new_items.extend(_extract_transformers(text, text_lower, page_num))
+        new_items.extend(_extract_panels(text, text_lower, page_num, page_type))
+        new_items.extend(_extract_cables(text, text_lower, page_num))
+        new_items.extend(_extract_generators(text, text_lower, page_num))
+        new_items.extend(_extract_ups_systems(text, text_lower, page_num))
+        new_items.extend(_extract_ats_units(text, text_lower, page_num))
+        new_items.extend(_extract_pdus(text, text_lower, page_num))
 
         if page_type == "panel_schedule":
-            equipment.extend(_extract_panel_schedule_circuits(text, text_lower, page_num))
+            new_items.extend(_extract_panel_schedule_circuits(text, text_lower, page_num))
 
-    # Deduplicate by designation + type
-    seen = set()
-    unique = []
+        # Tag source page type — cut sheet items get lower priority
+        for item in new_items:
+            item.attributes["source_page_type"] = page_type
+
+        equipment.extend(new_items)
+
+    # Smart deduplication: prefer SLD/schedule items over cut sheet duplicates
+    PAGE_TYPE_PRIORITY = {
+        "single_line_diagram": 0,
+        "panel_schedule": 1,
+        "equipment_schedule": 2,
+        "cable_schedule": 3,
+        "load_schedule": 4,
+        "specification": 5,
+        "cut_sheet": 6,
+        "unknown": 7,
+    }
+
+    # Group by (type, model+amps) for smarter dedup
+    seen = {}  # key -> (priority, equipment)
     for eq in equipment:
         key = (eq.equipment_type, eq.designation.upper().strip())
-        if key not in seen:
-            seen.add(key)
-            unique.append(eq)
+        source_type = eq.attributes.get("source_page_type", "unknown")
+        priority = PAGE_TYPE_PRIORITY.get(source_type, 7)
 
-    return unique
+        if key not in seen or priority < seen[key][0]:
+            seen[key] = (priority, eq)
+
+    return [eq for _, eq in seen.values()]
 
 
 # ---------------------------------------------------------------------------
