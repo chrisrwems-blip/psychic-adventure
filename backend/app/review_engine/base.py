@@ -99,28 +99,45 @@ class BaseEquipmentChecker(ABC):
         """Default evaluation — subclasses override for smarter checks.
 
         Logic:
-        - If strong keywords are found → PASS (data is present in submittal)
+        - If strong keywords are found → PASS with what was found
         - If nothing found → FAIL for critical/major, NEEDS REVIEW for minor/info
+        - All messages are SPECIFIC — no "Related content found, verify..." garbage
         """
         keywords = self._extract_check_keywords(item)
         relevant = [kw for kw in keywords if len(kw) > 2]
 
         if not relevant:
-            # No meaningful keywords to check — mark as needs review
-            return self._needs_review(item, f"Manual verification required: {item.check}")
+            return self._needs_review(item,
+                f"Manual review required — {item.check}. "
+                f"Reference: {item.standard}.")
 
-        matched_count = sum(1 for kw in relevant if kw in text)
-        match_ratio = matched_count / len(relevant) if relevant else 0
+        matched = [kw for kw in relevant if kw in text]
+        match_ratio = len(matched) / len(relevant) if relevant else 0
 
         if match_ratio >= 0.5:
-            # Strong match — data appears to be present
-            return self._pass(item, f"Data found in submittal. Verified present: {item.check}")
+            # Found — report what keywords confirmed it
+            return self._pass(item,
+                f"Confirmed in submittal: {item.check}")
         elif match_ratio > 0:
-            # Partial match — something relevant is there but not complete
-            return self._needs_review(item, f"Partial data found. Verify completeness: {item.check}")
+            # Partial — report what's present and what's missing
+            missing = [kw for kw in relevant if kw not in text]
+            return self._needs_review(item,
+                f"{item.check} — partially addressed. "
+                f"Confirm: {', '.join(missing[:3])} per {item.standard}.")
         else:
-            # Nothing found
-            return self._fail(item, f"Not found in submittal. Must verify: {item.check}")
+            # Not found — specific about what's missing and why it matters
+            if item.severity == "critical":
+                return self._fail(item,
+                    f"{item.check} — NOT FOUND in submittal. "
+                    f"Required per {item.standard}. This is a critical item "
+                    f"that must be addressed before approval.")
+            elif item.severity == "major":
+                return self._fail(item,
+                    f"{item.check} — not documented in submittal. "
+                    f"Required per {item.standard}.")
+            else:
+                return self._needs_review(item,
+                    f"{item.check} — not found. Verify per {item.standard}.")
 
     def _extract_check_keywords(self, item: CheckItem) -> list[str]:
         """Pull meaningful keywords from a check item for text matching."""
