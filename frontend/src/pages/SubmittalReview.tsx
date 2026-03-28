@@ -33,6 +33,9 @@ export default function SubmittalReview() {
   const [viewingMarkup, setViewingMarkup] = useState(false);
   const [reviewSummary, setReviewSummary] = useState<any>(null);
   const [newComment, setNewComment] = useState({ comment_text: '', severity: 'info', reference_code: '' });
+  const [reviewSort, setReviewSort] = useState<'category' | 'severity' | 'status'>('severity');
+  const [reviewFilter, setReviewFilter] = useState<'all' | 'fail' | 'pass' | 'review'>('all');
+  const [commentSort, setCommentSort] = useState<'severity' | 'status' | 'date'>('severity');
   const [emailForm, setEmailForm] = useState({ email_type: 'clarification', recipients: '', additional_notes: '' });
   const [selectedEmail, setSelectedEmail] = useState<GeneratedEmail | null>(null);
 
@@ -118,12 +121,58 @@ export default function SubmittalReview() {
 
   if (!submittal) return <div className="text-center py-12 text-gray-400">Loading...</div>;
 
-  // Group results by category
-  const resultsByCategory: Record<string, ReviewResult[]> = {};
-  results.forEach((r) => {
-    const cat = r.check_category || 'Other';
-    if (!resultsByCategory[cat]) resultsByCategory[cat] = [];
-    resultsByCategory[cat].push(r);
+  // Severity order for sorting
+  const severityOrder: Record<string, number> = { critical: 0, major: 1, minor: 2, info: 3 };
+  const statusOrder: Record<number, number> = { 0: 0, [-1]: 1, 1: 2 }; // fail, review, pass
+
+  // Filter results
+  const filteredResults = results.filter((r) => {
+    if (reviewFilter === 'fail') return r.passed === 0;
+    if (reviewFilter === 'pass') return r.passed === 1;
+    if (reviewFilter === 'review') return r.passed === -1;
+    return true;
+  });
+
+  // Group results by selected sort mode
+  const groupedResults: Record<string, ReviewResult[]> = {};
+  filteredResults.forEach((r) => {
+    let key: string;
+    if (reviewSort === 'severity') {
+      // Guess severity from details or category
+      const det = (r.details || '').toLowerCase();
+      if (det.includes('[critical]') || r.check_category?.toLowerCase().includes('critical')) key = 'Critical';
+      else if (det.includes('[major]')) key = 'Major';
+      else if (det.includes('[minor]')) key = 'Minor';
+      else if (r.passed === 0) key = 'Failed Checks';
+      else if (r.passed === -1) key = 'Needs Review';
+      else key = 'Passed';
+    } else if (reviewSort === 'status') {
+      key = r.passed === 0 ? 'FAIL' : r.passed === 1 ? 'PASS' : 'NEEDS REVIEW';
+    } else {
+      key = r.check_category || 'Other';
+    }
+    if (!groupedResults[key]) groupedResults[key] = [];
+    groupedResults[key].push(r);
+  });
+
+  // Sort groups: Failed first, then Needs Review, then Passed
+  const groupOrder: Record<string, number> = {
+    'Critical': 0, 'Failed Checks': 1, 'FAIL': 1,
+    'Major': 2, 'Needs Review': 3, 'NEEDS REVIEW': 3,
+    'Minor': 4, 'Passed': 5, 'PASS': 5,
+  };
+  const sortedGroups = Object.entries(groupedResults).sort(
+    ([a], [b]) => (groupOrder[a] ?? 10) - (groupOrder[b] ?? 10)
+  );
+
+  // Sort comments
+  const sortedComments = [...comments].sort((a, b) => {
+    if (commentSort === 'severity') return (severityOrder[a.severity] ?? 9) - (severityOrder[b.severity] ?? 9);
+    if (commentSort === 'status') {
+      const so: Record<string, number> = { open: 0, deferred: 1, resolved: 2 };
+      return (so[a.status] ?? 9) - (so[b.status] ?? 9);
+    }
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
   });
 
   const tabs = [
@@ -252,10 +301,28 @@ export default function SubmittalReview() {
       {/* Tab Content */}
       {activeTab === 'review' && (
         <div className="space-y-4">
-          {Object.entries(resultsByCategory).map(([category, items]) => (
-            <div key={category} className="bg-white rounded-lg shadow">
-              <div className="px-4 py-3 border-b bg-gray-50 rounded-t-lg">
-                <h3 className="font-semibold text-sm">{category}</h3>
+          {/* Sort & Filter controls */}
+          <div className="flex gap-3 bg-white rounded-lg shadow p-3 items-center">
+            <span className="text-sm text-gray-500">Sort by:</span>
+            {(['severity', 'status', 'category'] as const).map((s) => (
+              <button key={s} onClick={() => setReviewSort(s)}
+                className={`px-3 py-1 rounded text-sm ${reviewSort === s ? 'bg-blue-600 text-white' : 'bg-gray-100 hover:bg-gray-200'}`}
+              >{s.charAt(0).toUpperCase() + s.slice(1)}</button>
+            ))}
+            <span className="text-sm text-gray-500 ml-4">Show:</span>
+            {([['all', 'All'], ['fail', 'Failures'], ['review', 'Needs Review'], ['pass', 'Passed']] as const).map(([val, label]) => (
+              <button key={val} onClick={() => setReviewFilter(val)}
+                className={`px-3 py-1 rounded text-sm ${reviewFilter === val ? 'bg-blue-600 text-white' : 'bg-gray-100 hover:bg-gray-200'}`}
+              >{label}</button>
+            ))}
+            <span className="text-xs text-gray-400 ml-auto">{filteredResults.length} of {results.length} results</span>
+          </div>
+
+          {sortedGroups.map(([group, items]) => (
+            <div key={group} className="bg-white rounded-lg shadow">
+              <div className="px-4 py-3 border-b bg-gray-50 rounded-t-lg flex items-center justify-between">
+                <h3 className="font-semibold text-sm">{group}</h3>
+                <span className="text-xs text-gray-400">{items.length} items</span>
               </div>
               <div className="divide-y">
                 {items.map((r) => {
@@ -316,9 +383,20 @@ export default function SubmittalReview() {
             </div>
           </form>
 
+          {/* Sort controls */}
+          <div className="flex gap-3 bg-white rounded-lg shadow p-3 items-center">
+            <span className="text-sm text-gray-500">Sort by:</span>
+            {(['severity', 'status', 'date'] as const).map((s) => (
+              <button key={s} onClick={() => setCommentSort(s)}
+                className={`px-3 py-1 rounded text-sm ${commentSort === s ? 'bg-blue-600 text-white' : 'bg-gray-100 hover:bg-gray-200'}`}
+              >{s.charAt(0).toUpperCase() + s.slice(1)}</button>
+            ))}
+            <span className="text-xs text-gray-400 ml-auto">{comments.length} comments</span>
+          </div>
+
           {/* Comment List */}
           <div className="space-y-2">
-            {comments.map((c) => (
+            {sortedComments.map((c) => (
               <div key={c.id} className={`bg-white rounded-lg shadow p-4 border-l-4 ${
                 c.status === 'resolved' ? 'border-green-400 opacity-60' :
                 c.status === 'deferred' ? 'border-gray-400 opacity-60' :
