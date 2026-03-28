@@ -47,5 +47,17 @@ export const generateEmail = (submittalId: number, data: { email_type: string; r
 export const getEmails = (submittalId: number) => api.get(`/emails/submittal/${submittalId}`);
 export const markEmailSent = (emailId: number) => api.patch(`/emails/${emailId}/mark-sent`);
 
+// --- Reports ---
+export const getReportUrl = (submittalId: number) => `/api/reviews/${submittalId}/report`;
+
+// --- Revision Comparison ---
+export const compareRevision = (submittalId: number, formData: FormData) =>
+  api.post(`/reviews/${submittalId}/compare-revision`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+
+// --- Vision ---
+export const startVisionAnalysis = (submittalId: number) => api.post(`/reviews/${submittalId}/vision-analyze`);
+export const getVisionStatus = (submittalId: number) => api.get(`/reviews/${submittalId}/vision-status`);
+export const checkVisionAvailable = () => api.get('/reviews/vision-available');
+
 // --- Dashboard ---
 export const getDashboard = () => api.get('/dashboard');
