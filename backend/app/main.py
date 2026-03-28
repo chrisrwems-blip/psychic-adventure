@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from app.database import init_db
-from app.routers import projects, submittals, reviews, comments, emails, register, rfis
+from app.routers import projects, submittals, reviews, comments, emails, register, rfis, feedback
 
 
 @asynccontextmanager
@@ -34,6 +34,7 @@ app.include_router(comments.router)
 app.include_router(emails.router)
 app.include_router(register.router)
 app.include_router(rfis.router)
+app.include_router(feedback.router)
 
 
 @app.get("/api/health")

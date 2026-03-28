@@ -54,6 +54,19 @@ export const getReportUrl = (submittalId: number) => `/api/reviews/${submittalId
 export const compareRevision = (submittalId: number, formData: FormData) =>
   api.post(`/reviews/${submittalId}/compare-revision`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
 
+// --- Spec Validation ---
+export const validateSpec = (submittalId: number, formData: FormData) =>
+  api.post(`/reviews/${submittalId}/validate-spec`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+
+// --- Multi-Submittal Cross-Reference ---
+export const crossReferenceProject = (projectId: number) =>
+  api.post(`/reviews/project/${projectId}/cross-reference`);
+
+// --- Feedback ---
+export const submitFeedback = (submittalId: number, data: { finding_type: string; action: string; notes?: string }) =>
+  api.post(`/feedback/${submittalId}`, data);
+export const getFeedbackStats = () => api.get('/feedback/stats');
+
 // --- NEC Commentary ---
 export const getNecCommentary = (codeRef: string) => api.get(`/reviews/nec-commentary/${encodeURIComponent(codeRef)}`);
 

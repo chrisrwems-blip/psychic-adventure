@@ -239,3 +239,80 @@ def get_nec_commentary(code_ref: str):
     if not commentary:
         return {"found": False, "code": code_ref}
     return {"found": True, "code": code_ref, **commentary}
+
+
+@router.post("/project/{project_id}/cross-reference")
+def cross_reference_project(project_id: int, db: Session = Depends(get_db)):
+    """Cross-reference all submittals in a project against each other."""
+    from app.services.multi_submittal import cross_reference_submittals
+    findings = cross_reference_submittals(db, project_id)
+    return {
+        "project_id": project_id,
+        "findings": [
+            {
+                "finding_type": f.finding_type,
+                "severity": f.severity,
+                "equipment": f.equipment_1,
+                "description": f.description,
+                "recommendation": f.recommendation,
+            }
+            for f in findings
+        ],
+        "total": len(findings),
+    }
+
+
+@router.post("/{submittal_id}/validate-spec")
+async def validate_against_spec(
+    submittal_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """Upload a spec PDF and validate the submittal against it."""
+    import os, shutil, tempfile
+    from app.services.spec_validator import extract_spec_requirements, validate_submittal_against_spec
+    from app.services.pdf_parser import extract_text_by_page
+    from app.services.page_classifier import classify_all_pages
+    from app.services.equipment_extractor import extract_all_equipment
+
+    submittal = db.query(Submittal).filter(Submittal.id == submittal_id).first()
+    if not submittal:
+        raise HTTPException(status_code=404, detail="Submittal not found")
+
+    # Save spec file temporarily
+    spec_dir = tempfile.mkdtemp()
+    spec_path = os.path.join(spec_dir, file.filename)
+    with open(spec_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    try:
+        # Extract spec requirements
+        spec_reqs = extract_spec_requirements(spec_path)
+
+        # Get submittal data
+        pages = extract_text_by_page(submittal.file_path)
+        pages = classify_all_pages(pages) if hasattr(pages[0], 'get') else pages
+        equipment = extract_all_equipment(pages)
+
+        # Validate
+        findings = validate_submittal_against_spec(spec_reqs, pages, equipment)
+
+        return {
+            "submittal_id": submittal_id,
+            "spec_requirements": len(spec_reqs),
+            "findings": [
+                {
+                    "finding_type": f.finding_type,
+                    "severity": f.severity,
+                    "description": f.description,
+                    "recommendation": f.recommendation,
+                    "reference": f.reference_code,
+                }
+                for f in findings
+            ],
+            "total_findings": len(findings),
+        }
+    finally:
+        if os.path.exists(spec_path):
+            os.remove(spec_path)
+        os.rmdir(spec_dir)
