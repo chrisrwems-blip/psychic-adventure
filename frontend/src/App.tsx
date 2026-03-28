@@ -62,6 +62,8 @@ export default function App() {
           <Route path="/project/:projectId" element={<ProjectDetail />} />
           <Route path="/submittal/:submittalId" element={<SubmittalReview />} />
           <Route path="/comments" element={<CommentTracker />} />
+          <Route path="/rfis" element={<RFITracker />} />
+          <Route path="/register" element={<SubmittalRegister />} />
         </Routes>
       </main>
 

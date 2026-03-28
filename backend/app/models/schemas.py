@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional
 from datetime import datetime
 
@@ -13,6 +13,8 @@ class ProjectCreate(BaseModel):
 
 
 class ProjectResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     name: str
     description: Optional[str]
@@ -21,9 +23,6 @@ class ProjectResponse(BaseModel):
     tier_level: Optional[str]
     created_at: datetime
     submittal_count: Optional[int] = 0
-
-    class Config:
-        from_attributes = True
 
 
 # --- Submittal Schemas ---
@@ -40,6 +39,8 @@ class SubmittalCreate(BaseModel):
 
 
 class SubmittalResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     project_id: int
     title: str
@@ -59,9 +60,6 @@ class SubmittalResponse(BaseModel):
     reviewed_at: Optional[datetime]
     comment_count: Optional[int] = 0
     open_comments: Optional[int] = 0
-
-    class Config:
-        from_attributes = True
 
 
 # --- Comment Schemas ---
@@ -85,6 +83,8 @@ class CommentUpdate(BaseModel):
 
 
 class CommentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     submittal_id: int
     page_number: Optional[int]
@@ -100,12 +100,11 @@ class CommentResponse(BaseModel):
     created_at: datetime
     resolved_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
-
 
 # --- Review Result Schemas ---
 class ReviewResultResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     submittal_id: int
     check_name: str
@@ -113,9 +112,6 @@ class ReviewResultResponse(BaseModel):
     passed: int
     details: Optional[str]
     reference_standard: Optional[str]
-
-    class Config:
-        from_attributes = True
 
 
 # --- Email Schemas ---
@@ -126,6 +122,8 @@ class EmailGenerate(BaseModel):
 
 
 class EmailResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     submittal_id: int
     email_type: str
@@ -134,9 +132,6 @@ class EmailResponse(BaseModel):
     recipients: Optional[str]
     sent: int
     created_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 # --- RFI Schemas ---
@@ -158,6 +153,8 @@ class RFIResponseUpdate(BaseModel):
 
 
 class RFIResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     submittal_id: int
     rfi_number: Optional[str]
@@ -173,9 +170,6 @@ class RFIResponse(BaseModel):
     related_comment_ids: Optional[str]
     created_at: datetime
     closed_at: Optional[datetime]
-
-    class Config:
-        from_attributes = True
 
 
 # --- Submittal Register Schemas ---
@@ -202,6 +196,8 @@ class RegisterItemUpdate(BaseModel):
 
 
 class RegisterItemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     project_id: int
     spec_section: Optional[str]
@@ -213,9 +209,6 @@ class RegisterItemResponse(BaseModel):
     notes: Optional[str]
     due_date: Optional[datetime]
     created_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class RegisterSummary(BaseModel):

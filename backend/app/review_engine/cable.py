@@ -46,7 +46,7 @@ class CableChecker(BaseEquipmentChecker):
             CheckItem("CBL-051", "NEC Article 310 compliance", "Standards", "NEC 310", "major"),
         ]
 
-    def _evaluate_check(self, item, text, metadata):
+    def _evaluate_check(self, item: CheckItem, text: str, metadata: dict) -> ReviewFinding:
         check_id = item.id
 
         if check_id == "CBL-001":

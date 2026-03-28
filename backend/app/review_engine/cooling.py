@@ -56,7 +56,7 @@ class CoolingChecker(BaseEquipmentChecker):
             CheckItem("CLG-062", "Factory performance test data provided", "Standards", "AHRI", "minor"),
         ]
 
-    def _evaluate_check(self, item, text, metadata):
+    def _evaluate_check(self, item: CheckItem, text: str, metadata: dict) -> ReviewFinding:
         check_id = item.id
 
         if check_id == "CLG-001":

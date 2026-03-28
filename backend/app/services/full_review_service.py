@@ -10,14 +10,13 @@ Design principles:
 7. Comments only for actionable critical/major items
 """
 from datetime import datetime, timezone
-from collections import defaultdict
 from sqlalchemy.orm import Session
 
 from app.models.database_models import Submittal, ReviewResult, ReviewComment, SubmittalStatus
 from app.review_engine.registry import get_checker, CHECKER_REGISTRY
 from app.services.pdf_parser import extract_text_by_page, extract_metadata_by_page, extract_metadata
 from app.services.page_classifier import classify_all_pages, get_page_summary, PageType
-from app.services.equipment_extractor import extract_all_equipment, ExtractedEquipment
+from app.services.equipment_extractor import extract_all_equipment
 from app.services.cross_reference import run_cross_reference, CrossRefFinding
 from app.services.topology import build_topology
 from app.services.jurisdiction import detect_jurisdiction
@@ -132,6 +131,7 @@ def run_full_review(db: Session, submittal_id: int, has_spec: bool = False) -> d
     page_summary = get_page_summary(pages)
 
     full_text = "\n".join(p["text"] for p in pages)
+    full_text_lower = full_text.lower()
     global_metadata = extract_metadata(full_text)
 
     # --- Step 1b: Detect jurisdiction (NEC vs IEC) ---
@@ -173,7 +173,6 @@ def run_full_review(db: Session, submittal_id: int, has_spec: bool = False) -> d
         "sts": ["static transfer", "sts"],
         "pdu": ["pdu", "power distribution unit"],
     }
-    full_text_lower = full_text.lower()
     for checker_type, keywords in KEYWORD_TO_CHECKER.items():
         if any(kw in full_text_lower for kw in keywords):
             if checker_type in CHECKER_REGISTRY:
@@ -231,7 +230,6 @@ def run_full_review(db: Session, submittal_id: int, has_spec: bool = False) -> d
 
     # Check for IEC-only equipment in NEC jurisdiction
     if jurisdiction.code == "NEC":
-        full_text_lower = full_text.lower()
         # Look for IEC-only certifications without corresponding UL
         for eq in all_equipment:
             raw = (eq.raw_text or "").lower()

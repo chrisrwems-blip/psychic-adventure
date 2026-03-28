@@ -53,7 +53,7 @@ class ATSChecker(BaseEquipmentChecker):
             CheckItem("ATS-061", "Failure mode documented (fails to preferred source)", "Redundancy", "Project Spec", "major"),
         ]
 
-    def _evaluate_check(self, item, text, metadata):
+    def _evaluate_check(self, item: CheckItem, text: str, metadata: dict) -> ReviewFinding:
         check_id = item.id
 
         if check_id == "ATS-001":

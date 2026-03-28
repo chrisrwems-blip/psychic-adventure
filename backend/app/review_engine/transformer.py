@@ -50,7 +50,7 @@ class TransformerChecker(BaseEquipmentChecker):
             CheckItem("TX-052", "Factory test report included (routine tests)", "Standards", "IEEE C57.12.01", "minor"),
         ]
 
-    def _evaluate_check(self, item, text, metadata):
+    def _evaluate_check(self, item: CheckItem, text: str, metadata: dict) -> ReviewFinding:
         check_id = item.id
 
         if check_id == "TX-001":

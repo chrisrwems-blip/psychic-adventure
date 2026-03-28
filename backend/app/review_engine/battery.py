@@ -31,7 +31,7 @@ class BatteryChecker(BaseEquipmentChecker):
             CheckItem("BAT-023", "Recharge time to 80% and 100%", "Ratings", "Project Spec", "major"),
         ]
 
-    def _evaluate_check(self, item, text, metadata):
+    def _evaluate_check(self, item: CheckItem, text: str, metadata: dict) -> ReviewFinding:
         check_id = item.id
 
         if check_id == "BAT-001":

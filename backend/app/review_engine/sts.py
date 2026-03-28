@@ -1,4 +1,3 @@
-import re
 from .base import BaseEquipmentChecker, CheckItem, ReviewFinding
 
 
@@ -27,7 +26,7 @@ class STSChecker(BaseEquipmentChecker):
             CheckItem("STS-016", "ITIC/CBEMA curve compliance documentation", "Standards", "ITIC/CBEMA", "major"),
         ]
 
-    def _evaluate_check(self, item, text, metadata):
+    def _evaluate_check(self, item: CheckItem, text: str, metadata: dict) -> ReviewFinding:
         check_id = item.id
 
         if check_id == "STS-003":
