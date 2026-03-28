@@ -136,11 +136,32 @@ def run_full_review(db: Session, submittal_id: int, has_spec: bool = False) -> d
     # Always run the user-selected type
     checker_types_to_run = {submittal.equipment_type}
 
-    # Also run checkers for every equipment type discovered in the document
+    # Run checkers for every equipment type discovered in the document
     for eq in all_equipment:
         mapped = EQUIPMENT_TO_CHECKER.get(eq.equipment_type)
         if mapped and mapped in CHECKER_REGISTRY:
             checker_types_to_run.add(mapped)
+
+    # For large submittals, auto-detect which checkers to run based on page classification
+    # If there are panel schedules, run the panelboard checker. If SLDs, run switchgear. Etc.
+    PAGE_TYPE_TO_CHECKERS = {
+        "single_line_diagram": ["switchgear", "transformer", "cable", "panelboard"],
+        "panel_schedule": ["panelboard"],
+        "cable_schedule": ["cable"],
+        "equipment_schedule": ["switchgear", "transformer", "ups", "generator", "ats"],
+        "load_schedule": ["switchgear", "transformer"],
+        "cut_sheet": [],  # Don't auto-add from cut sheets — too generic
+    }
+    for page_type, count in page_summary.items():
+        if count > 0 and page_type in PAGE_TYPE_TO_CHECKERS:
+            for ct in PAGE_TYPE_TO_CHECKERS[page_type]:
+                if ct in CHECKER_REGISTRY:
+                    checker_types_to_run.add(ct)
+
+    # For any submittal over 50 pages, also check for common DC equipment
+    if len(pages) > 50:
+        for ct in ["switchgear", "panelboard", "cable", "transformer"]:
+            checker_types_to_run.add(ct)
 
     # --- Step 4: Run each checker type ONCE against the full document ---
     all_findings = []
