@@ -40,6 +40,8 @@ export default function SubmittalReview() {
   const [commentSort, setCommentSort] = useState<'severity' | 'status' | 'date'>('severity');
   const [expandedResult, setExpandedResult] = useState<number | null>(null);
   const [pdfPage, setPdfPage] = useState<number>(1);
+  const [revisionChanges, setRevisionChanges] = useState<any[]>([]);
+  const [revisionSummary, setRevisionSummary] = useState<any>(null);
   const [emailForm, setEmailForm] = useState({ email_type: 'clarification', recipients: '', additional_notes: '' });
   const [selectedEmail, setSelectedEmail] = useState<GeneratedEmail | null>(null);
 
@@ -245,30 +247,87 @@ export default function SubmittalReview() {
       </div>
 
       {/* Revision Comparison */}
-      <details className="bg-white rounded-lg shadow">
-        <summary className="px-4 py-3 cursor-pointer font-medium text-sm text-blue-600 hover:underline">
+      <details className="card">
+        <summary className="px-5 py-4 cursor-pointer font-semibold text-sm text-slate-700 hover:text-blue-600 flex items-center gap-2">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+          </svg>
           Compare with Revision (upload Rev B)
         </summary>
-        <div className="px-4 pb-4">
+        <div className="px-5 pb-5 border-t border-slate-100">
           <form onSubmit={async (e) => {
             e.preventDefault();
             const input = (e.currentTarget.querySelector('input[type=file]') as HTMLInputElement);
             if (!input.files?.[0]) return;
             const fd = new FormData();
             fd.append('file', input.files[0]);
+            const btn = e.currentTarget.querySelector('button[type=submit]') as HTMLButtonElement;
+            btn.textContent = 'Comparing...';
+            btn.disabled = true;
             try {
               const res = await compareRevision(Number(submittalId), fd);
-              alert(`Comparison complete: ${res.data.summary?.total_changes || 0} changes found. Check console for details.`);
-              console.log('Revision comparison:', res.data);
+              const data = res.data;
+              setRevisionChanges(data.changes || []);
+              setRevisionSummary(data.summary || null);
             } catch (err) {
               console.error('Comparison failed', err);
+            } finally {
+              btn.textContent = 'Compare';
+              btn.disabled = false;
             }
-          }} className="flex gap-3 items-center mt-2">
-            <input type="file" accept=".pdf" className="text-sm" />
-            <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">
-              Compare
-            </button>
+          }} className="flex gap-3 items-center mt-4">
+            <input type="file" accept=".pdf" className="input text-sm flex-1" />
+            <button type="submit" className="btn-primary">Compare</button>
           </form>
+
+          {/* Revision Results */}
+          {revisionSummary && (
+            <div className="mt-4 space-y-4">
+              <div className="grid grid-cols-4 gap-3">
+                {[
+                  { label: 'Total Changes', value: revisionSummary.total_changes || 0, color: 'from-slate-500 to-slate-600' },
+                  { label: 'Added', value: revisionSummary.equipment_added || 0, color: 'from-emerald-500 to-emerald-600' },
+                  { label: 'Removed', value: revisionSummary.equipment_removed || 0, color: 'from-red-500 to-red-600' },
+                  { label: 'Modified', value: revisionSummary.ratings_changed || 0, color: 'from-amber-500 to-amber-600' },
+                ].map((s) => (
+                  <div key={s.label} className="relative bg-slate-50 rounded-lg p-3 overflow-hidden">
+                    <div className={`absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r ${s.color}`} />
+                    <p className="text-xs text-slate-500">{s.label}</p>
+                    <p className="text-xl font-bold text-slate-800">{s.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              {revisionChanges.length > 0 && (
+                <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-96 overflow-y-auto">
+                  {revisionChanges.map((change: any, i: number) => (
+                    <div key={i} className={`px-4 py-3 text-sm ${
+                      change.change_type === 'added' ? 'bg-emerald-50/50' :
+                      change.change_type === 'removed' ? 'bg-red-50/50' :
+                      'bg-amber-50/50'
+                    }`}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`badge ${
+                          change.change_type === 'added' ? 'badge-pass' :
+                          change.change_type === 'removed' ? 'badge-fail' :
+                          'badge-review'
+                        }`}>{change.change_type}</span>
+                        <span className="font-mono font-semibold text-slate-700">{change.equipment_id}</span>
+                      </div>
+                      <p className="text-slate-600">{change.description}</p>
+                      {change.old_value && change.new_value && (
+                        <p className="text-xs text-slate-500 mt-1">
+                          <span className="line-through text-red-500">{change.old_value}</span>
+                          {' → '}
+                          <span className="text-emerald-600 font-medium">{change.new_value}</span>
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </details>
 
