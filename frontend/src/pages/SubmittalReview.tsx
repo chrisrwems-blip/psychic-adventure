@@ -15,6 +15,40 @@ const SEVERITY_COLORS: Record<string, string> = {
   info: 'bg-blue-100 text-blue-800 border-blue-300',
 };
 
+// NEC code commentary — "why it matters" explanations
+const NEC_COMMENTARY: Record<string, string> = {
+  "NEC 110.9": "A breaker that can't interrupt the available fault current may explode, causing arc flash, fire, and potentially fatal injuries.",
+  "NEC 110.24": "Field personnel need to know the fault current to verify equipment ratings and select proper PPE.",
+  "NEC 110.24(A)": "Field personnel need to know the fault current to verify equipment ratings and select proper PPE.",
+  "NEC 110.26": "Inadequate clearance prevents safe maintenance and creates arc flash risk. Frequently the most contentious issue in modular data centers.",
+  "NEC 230.95": "Arcing ground faults on 480Y/277V systems can persist at levels below overcurrent device pickup, causing fires.",
+  "NEC 240.4": "Undersized overcurrent protection can allow conductors to overheat, degrading insulation and potentially starting fires.",
+  "NEC 240.4(D)": "#14 AWG max 15A, #12 max 20A, #10 max 30A. Exceeding these limits is a direct NEC violation.",
+  "NEC 240.6": "Non-standard ratings indicate either an adjustable trip setting or an error.",
+  "NEC 240.87": "Large breakers can sustain arcs long enough to cause catastrophic burns. ZSI, maintenance switches, or active mitigation reduce this risk.",
+  "NEC 250.30": "Every transformer creates a separately derived system that must be independently grounded. Missing grounding creates shock hazards.",
+  "NEC 250.122": "Undersized grounding conductors may not safely carry fault current, preventing overcurrent devices from operating.",
+  "NEC 310.16": "THE table for sizing conductors. Using the wrong column or forgetting derating factors is a common error.",
+  "NEC 408.36": "A breaker rated higher than the bus can push more current through the bus than it can handle, causing overheating and fire.",
+  "NEC 450.3": "Transformer protection must balance between protecting the transformer and allowing inrush current.",
+  "NEC 450.3(B)": "Primary OCPD generally limited to 125% of FLA, next standard size up.",
+  "NEC 700.32": "A fault on one emergency branch must not trip upstream devices that feed other emergency loads. Loss of emergency power during a fire can be fatal.",
+  "NEC 700.32, 701.27": "Emergency and legally required standby systems require full selective coordination from load to alternate source.",
+  "NEC 701.27": "Same principle as 700.32 but for legally required standby loads like smoke control and elevators.",
+  "NEC 110.2": "Equipment without proper UL listing cannot be legally installed in the US.",
+  "NEC 110.2, 110.3(B)": "Equipment without proper UL listing cannot be legally installed in the US. IEC-only certification is not acceptable.",
+  "NEC 110.3(B)": "Using equipment outside its listed conditions voids the certification and may create safety hazards.",
+  "NEC 210.5": "Proper phase identification prevents cross-phase connections that can cause equipment damage and shock hazards.",
+  "IEEE C57.110": "Standard transformers serving IT loads will overheat due to harmonic currents. K-factor transformers handle this additional heating.",
+  "IEC 60364": "Metric cables must use IEC ampacity tables, not NEC. Converting mm² to AWG introduces errors.",
+  "UL 489": "Trip rating cannot exceed frame size — this is a fundamental product safety constraint.",
+  "ABB Product Catalog": "Frame/trip combination must be a real, orderable ABB product configuration.",
+  "Constructability": "Physical space and routing must be verified to ensure equipment can be installed and maintained.",
+  "Drawing Consistency": "Equipment designations, ratings, and locations must match between all drawings in the submittal.",
+  "Submittal Requirements": "Standard submittal documentation requirements for equipment review.",
+  "Drawing Standards": "Equipment labels and designations should be clear, consistent, and meaningful for field use.",
+};
+
 const RESULT_ICONS: Record<number, { icon: string; color: string }> = {
   1: { icon: 'PASS', color: 'text-green-600 bg-green-50' },
   0: { icon: 'FAIL', color: 'text-red-600 bg-red-50' },
@@ -480,11 +514,18 @@ export default function SubmittalReview() {
                             <div className="text-sm text-gray-700">{mainDetail}</div>
                           </div>
 
-                          {/* NEC Code Reference */}
+                          {/* NEC Code Reference with Commentary */}
                           {r.reference_standard && (
-                            <div className="bg-amber-50 border border-amber-200 rounded p-3">
+                            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
                               <div className="text-xs font-semibold text-amber-700 uppercase mb-1">Code Reference</div>
-                              <div className="text-sm text-amber-900 font-medium">{r.reference_standard}</div>
+                              <div className="text-sm text-amber-900 font-semibold">{r.reference_standard}</div>
+                              {NEC_COMMENTARY[r.reference_standard.split(',')[0].trim()] && (
+                                <div className="mt-2 pt-2 border-t border-amber-200/50">
+                                  <p className="text-xs text-amber-800 leading-relaxed">
+                                    {NEC_COMMENTARY[r.reference_standard.split(',')[0].trim()]}
+                                  </p>
+                                </div>
+                              )}
                             </div>
                           )}
 
