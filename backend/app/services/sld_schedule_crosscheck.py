@@ -281,13 +281,18 @@ def crosscheck_sld_vs_schedule(sld_entries: list[ScheduleEntry],
 # ---------------------------------------------------------------------------
 
 def _extract_from_sld(text: str, page_num: int) -> list[ScheduleEntry]:
-    """Extract breaker entries from SLD page text."""
+    """Extract breaker entries from SLD page text.
+
+    Supports multiple designation formats:
+    - ABB: -QF{n}/Q{n} (e.g., -QF2/Q8)
+    - Generic: CB-{n}, BR-{n}, BKR-{n}
+    - Eaton/Schneider: QF{n}, CB{n}
+    - US standard: {panel}-{circuit} (e.g., MDP-1, LP-A1)
+    """
     entries = []
     text_lower = text.lower()
 
-    # Pattern: -QF{n}/Q{n} followed by breaker model and ratings
-    # Example: "-QF2/Q8\nE6.2 H 4000 EkipTouch\nLSIG 4000"
-    # Example: "-QF12/Q9\nXT7H 1000 Ekip Touch\nMeasuring LSI 1000"
+    # Pattern 1: ABB format -QF{n}/Q{n}
     for match in re.finditer(r'-QF(\d+)/Q(\d+[A-Z]?)', text):
         qf_num = match.group(1)
         q_num = match.group(2)
@@ -340,6 +345,72 @@ def _extract_from_sld(text: str, page_num: int) -> list[ScheduleEntry]:
 
         entries.append(entry)
 
+    # Pattern 2: Generic designations — CB-1, BR-1, BKR-1, MDP-1, etc.
+    # These appear in US-style SLDs from Eaton, Schneider, Siemens, Square D
+    generic_patterns = [
+        r'\b(CB[-\s]?\d+[A-Z]?)\b',       # CB-1, CB1A
+        r'\b(BR[-\s]?\d+[A-Z]?)\b',       # BR-1
+        r'\b(BKR[-\s]?\d+[A-Z]?)\b',      # BKR-1
+        r'\b(MDP[-\s]?\d?)\b',             # MDP, MDP-1
+        r'\b(MCC[-\s]?\d+[A-Z]?)\b',      # MCC-1
+        r'\b(SWGR[-\s]?\d+[A-Z]?)\b',     # SWGR-1
+        r'\b(SWB[-\s]?\d+[A-Z]?)\b',      # SWB-1
+        r'\b(PP[-\s]?\d+[A-Z]?)\b',       # PP-1 (power panel)
+        r'\b(LP[-\s]?[A-Z]\d*)\b',        # LP-A, LP-A1
+        r'\b(DP[-\s]?\d+[A-Z]?)\b',       # DP-1
+    ]
+
+    seen_desigs = {e.q_designation for e in entries}  # Don't duplicate ABB entries
+
+    for pattern in generic_patterns:
+        for match in re.finditer(pattern, text):
+            desig = match.group(1).strip().upper()
+            if desig in seen_desigs or len(desig) < 2:
+                continue
+            seen_desigs.add(desig)
+
+            start = match.end()
+            context = text[start:start+300]
+            context_lower = context.lower()
+
+            entry = ScheduleEntry(
+                q_designation=desig,
+                page_number=page_num,
+                source="SLD",
+                raw_text=text[max(0, match.start()-20):start+100],
+            )
+
+            # Extract ratings from context: "800A", "3P", "65kA"
+            amp_match = re.search(r'(\d{2,5})\s*[aA]\b', context)
+            if amp_match:
+                entry.frame_amps = int(amp_match.group(1))
+                entry.trip_amps = entry.frame_amps
+
+            pole_match = re.search(r'(\d)\s*[pP]', context)
+            if pole_match:
+                entry.poles = int(pole_match.group(1))
+
+            ka_match = re.search(r'(\d{2,3})\s*(?:ka|kaic)', context_lower)
+            if ka_match:
+                entry.kaic = int(ka_match.group(1))
+
+            # Extract breaker model (any manufacturer)
+            model_patterns = [
+                r'(E\d\.\d\s*[HNSLV]?)',           # ABB Emax
+                r'(XT\d+[HNSLBC]?)',                # ABB Tmax XT
+                r'(Magnum\s*DS|NRX)',               # Eaton
+                r'(MTZ\d|NSX\d+|PowerPact\s*\w)',   # Schneider
+                r'(3WL\d+|3VA\d+)',                 # Siemens
+                r'(FD[B]?\d*|JD[B]?\d*|KD[B]?\d*)', # Eaton Series C
+            ]
+            for mp in model_patterns:
+                model_match = re.search(mp, context, re.IGNORECASE)
+                if model_match:
+                    entry.breaker_model = model_match.group(1).strip()
+                    break
+
+            entries.append(entry)
+
     return entries
 
 
@@ -360,22 +431,24 @@ def _extract_from_schedule(text: str, page_num: int) -> list[ScheduleEntry]:
     """
     entries = []
 
-    # Split into blocks by Q-designation
-    # Pattern: Q followed by number, optionally with letter suffix or comma-separated
-    q_blocks = re.split(r'(?=\bQ\d+[A-Z]?\b)', text)
+    # Split into blocks by equipment designation
+    # Supports: Q{n} (ABB), CB-{n}, BR-{n}, BKR-{n}, or any {letters}{dash}{number} pattern
+    designation_pattern = r'(?=\b(?:Q\d+[A-Z]?|CB[-\s]?\d+[A-Z]?|BR[-\s]?\d+[A-Z]?|BKR[-\s]?\d+[A-Z]?)\b)'
+    q_blocks = re.split(designation_pattern, text)
 
     for block in q_blocks:
         if not block.strip():
             continue
 
-        # Extract Q-designation
-        q_match = re.match(r'(Q\d+[A-Z]?(?:\s*[,+]\s*Q\d+[A-Z]?)*)', block)
+        # Extract equipment designation (Q{n}, CB-{n}, BR-{n}, BKR-{n})
+        q_match = re.match(r'((?:Q|CB[-\s]?|BR[-\s]?|BKR[-\s]?)\d+[A-Z]?(?:\s*[,+]\s*(?:Q|CB[-\s]?|BR[-\s]?|BKR[-\s]?)\d+[A-Z]?)*)', block)
         if not q_match:
             continue
 
         q_desig = q_match.group(1).strip()
-        # If it's a range like "Q4,Q5,Q6" take the first one
-        first_q = re.match(r'(Q\d+[A-Z]?)', q_desig).group(1) if re.match(r'Q\d+', q_desig) else q_desig
+        # If it's a range like "Q4,Q5,Q6" or "CB-1,CB-2" take the first one
+        first_match = re.match(r'((?:Q|CB[-\s]?|BR[-\s]?|BKR[-\s]?)\d+[A-Z]?)', q_desig)
+        first_q = first_match.group(1) if first_match else q_desig
 
         context = block[:500]
         context_lower = context.lower()
@@ -403,8 +476,14 @@ def _extract_from_schedule(text: str, page_num: int) -> list[ScheduleEntry]:
             entry.trip_amps = entry.frame_amps  # Default same; may be overridden below
             entry.kaic = int(rating_match.group(3))
 
-        # Breaker model
-        model_match = re.search(r'(E\d\.\d\s*[HNSLV]?|XT\d+[HNSLBC]?)\s*(\d{2,5})?', context)
+        # Breaker model — supports ABB, Eaton, Schneider, Siemens
+        model_match = re.search(
+            r'(E\d\.\d\s*[HNSLV]?|XT\d+[HNSLBC]?|'       # ABB
+            r'Magnum\s*DS|NRX|FD[B]?|JD[B]?|KD[B]?|'     # Eaton
+            r'MTZ\d|NSX\d+|PowerPact\s*\w|'               # Schneider
+            r'3WL\d+|3VA\d+|3VL\d+)'                      # Siemens
+            r'\s*(\d{2,5})?', context, re.IGNORECASE
+        )
         if model_match:
             entry.breaker_model = model_match.group(1).strip()
             if model_match.group(2):
@@ -447,12 +526,16 @@ def _extract_from_schedule(text: str, page_num: int) -> list[ScheduleEntry]:
 # ---------------------------------------------------------------------------
 
 def _normalize_q(q: str) -> Optional[str]:
-    """Normalize Q-designation for comparison."""
+    """Normalize equipment designation for comparison.
+
+    Handles: Q1, CB-1, BR-1, BKR-1, MDP-1, LP-A1, etc.
+    """
     if not q:
         return None
-    # Extract just the Q number: Q1, Q7, Q14A, etc.
-    m = re.match(r'(Q\d+[A-Z]?)', q.upper().strip())
-    return m.group(1) if m else None
+    normalized = q.upper().strip().replace(" ", "")
+    # Match any alphanumeric designation
+    m = re.match(r'((?:Q|CB-?|BR-?|BKR-?|MDP-?|MCC-?|LP-?|DP-?|PP-?|SWB-?|SWGR-?)\d*[A-Z]?\d*)', normalized)
+    return m.group(1) if m else normalized if len(normalized) >= 2 else None
 
 
 def _normalize_model(model: str) -> Optional[str]:
