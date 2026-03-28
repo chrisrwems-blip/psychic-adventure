@@ -74,32 +74,55 @@ def _check_description_consistency(sld_entries: list, schedule_entries: list) ->
 
 
 def _check_missing_labels(sld_entries: list, schedule_entries: list) -> list[CrossRefFinding]:
-    """Flag breakers with Q-designations but no descriptive label."""
+    """Flag breakers with Q-designations but no descriptive label.
+
+    Only flag major breakers (>= 400A) missing labels — small branch breakers
+    with no label are expected and not worth flagging individually.
+    Report as a single finding with a count rather than one per breaker.
+    """
     findings = []
-    flagged = set()
+    missing = []
 
     for entry in sld_entries:
         q = _norm_q(entry.q_designation)
-        if not q or q in flagged:
+        if not q:
             continue
-
         if not entry.description or len(entry.description.strip()) < 3:
-            flagged.add(q)
-            findings.append(CrossRefFinding(
-                finding_type="missing_label",
-                severity="minor",
-                equipment_1=q,
-                equipment_2=None,
-                page_number=entry.page_number,
-                description=(
-                    f"SLD Page {entry.page_number}: Breaker {q} "
-                    f"({entry.breaker_model or '?'} {entry.frame_amps or '?'}A) "
-                    f"has no descriptive label. Equipment should have a logical name "
-                    f"that makes sense on a field label."
-                ),
-                reference_code="Drawing Standards",
-                recommendation="Add descriptive label (e.g., 'MECH UPS FEED', 'IT RACK ROW A').",
-            ))
+            missing.append((q, entry.frame_amps, entry.page_number))
+
+    # Only flag individually for major breakers (>= 400A)
+    major_missing = [(q, a, p) for q, a, p in missing if a and a >= 400]
+    for q, amps, page in major_missing:
+        findings.append(CrossRefFinding(
+            finding_type="missing_label",
+            severity="major",
+            equipment_1=q,
+            equipment_2=None,
+            page_number=page,
+            description=(
+                f"SLD Page {page}: Breaker {q} ({amps}A) has no descriptive label. "
+                f"Major equipment should have a logical field label."
+            ),
+            reference_code="Drawing Standards",
+            recommendation="Add descriptive label (e.g., 'MECH UPS FEED', 'SOURCE A INCOMER').",
+        ))
+
+    # Summarize small breakers missing labels as one finding
+    small_missing = len(missing) - len(major_missing)
+    if small_missing > 5:
+        findings.append(CrossRefFinding(
+            finding_type="missing_label",
+            severity="minor",
+            equipment_1="Multiple breakers",
+            equipment_2=None,
+            page_number=0,
+            description=(
+                f"{small_missing} branch breakers on the SLD have no descriptive labels. "
+                f"Consider normalizing naming convention for field identification."
+            ),
+            reference_code="Drawing Standards",
+            recommendation="Add descriptive labels to all breakers for clarity in the field.",
+        ))
 
     return findings
 
@@ -161,7 +184,7 @@ def _check_duplicate_designations(entries: list) -> list[CrossRefFinding]:
         models = set(e.breaker_model for e in dupes if e.breaker_model)
 
         if len(frames) > 1:
-            frame_list = ", ".join(f"{f}A (pg {e.page_number})" for e in dupes if e.frame_amps)
+            frame_list = ", ".join(f"{e.frame_amps}A (pg {e.page_number})" for e in dupes if e.frame_amps)
             findings.append(CrossRefFinding(
                 finding_type="duplicate_with_mismatch",
                 severity="critical",
