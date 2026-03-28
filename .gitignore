@@ -17,6 +17,13 @@ backend/annotated/
 .vscode/
 .idea/
 
+# Electron build artifacts
+backend/build/
+backend/*.spec
+backend/static/
+backend/app/production.py
+backend/electron_launcher.py
+
 # OS
 .DS_Store
 Thumbs.db
