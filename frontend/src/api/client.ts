@@ -27,6 +27,8 @@ export const getAnnotatedPdfDownloadUrl = (id: number) => `/api/submittals/${id}
 
 // --- Reviews ---
 export const runReview = (submittalId: number) => api.post(`/reviews/${submittalId}/run`);
+export const runBatchReview = (submittalIds: number[]) =>
+  api.post('/reviews/batch', { submittal_ids: submittalIds });
 export const getReviewResults = (submittalId: number) => api.get(`/reviews/${submittalId}/results`);
 export const getEquipmentTypes = () => api.get('/reviews/equipment-types');
 

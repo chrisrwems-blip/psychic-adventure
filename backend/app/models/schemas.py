@@ -229,3 +229,13 @@ class DashboardStats(BaseModel):
     critical_issues: int
     submittals_by_status: dict
     recent_submittals: list
+
+
+class BatchReviewRequest(BaseModel):
+    submittal_ids: list[int]
+
+
+class BatchReviewResponse(BaseModel):
+    submittal_ids: list[int]
+    status: str
+    count: int

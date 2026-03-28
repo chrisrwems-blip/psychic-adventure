@@ -1,18 +1,22 @@
 import os
 import shutil
+import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.database import get_db, SessionLocal
 from app.models.database_models import ReviewResult, Submittal
-from app.models.schemas import ReviewResultResponse
+from app.models.schemas import BatchReviewRequest, BatchReviewResponse, ReviewResultResponse
 from app.services.review_service import run_review
 from app.services.full_review_service import run_full_review
 from app.services.report_generator import generate_review_report
 from app.services.revision_diff import compare_revisions
 from app.review_engine.registry import get_available_equipment_types
+
+logger = logging.getLogger(__name__)
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads")
 
@@ -39,6 +43,67 @@ def trigger_review(submittal_id: int, full: bool = True, db: Session = Depends(g
         return summary
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+def _run_single_review(submittal_id: int) -> dict:
+    """Run one review with its own DB session (thread-safe)."""
+    db = SessionLocal()
+    try:
+        return run_full_review(db, submittal_id)
+    except Exception as e:
+        logger.error("Batch review failed for submittal %d: %s", submittal_id, e)
+        submittal = db.query(Submittal).filter(Submittal.id == submittal_id).first()
+        if submittal:
+            submittal.status = "uploaded"
+            db.commit()
+        return {"submittal_id": submittal_id, "error": str(e)}
+    finally:
+        db.close()
+
+
+def _run_batch_reviews(submittal_ids: list[int]):
+    """Run multiple reviews in parallel using a thread pool."""
+    max_workers = min(len(submittal_ids), 4)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(_run_single_review, sid): sid
+            for sid in submittal_ids
+        }
+        for future in as_completed(futures):
+            sid = futures[future]
+            try:
+                future.result()
+                logger.info("Batch review completed for submittal %d", sid)
+            except Exception as e:
+                logger.error("Batch review error for submittal %d: %s", sid, e)
+
+
+@router.post("/batch", response_model=BatchReviewResponse)
+def trigger_batch_review(
+    request: BatchReviewRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """Run reviews on multiple submittals in parallel.
+
+    Returns immediately; reviews run in the background.
+    Poll individual submittal status to track progress.
+    """
+    # Validate all IDs exist
+    for sid in request.submittal_ids:
+        submittal = db.query(Submittal).filter(Submittal.id == sid).first()
+        if not submittal:
+            raise HTTPException(status_code=404, detail=f"Submittal {sid} not found")
+        submittal.status = "reviewing"
+    db.commit()
+
+    background_tasks.add_task(_run_batch_reviews, request.submittal_ids)
+
+    return BatchReviewResponse(
+        submittal_ids=request.submittal_ids,
+        status="started",
+        count=len(request.submittal_ids),
+    )
 
 
 @router.get("/{submittal_id}/results", response_model=list[ReviewResultResponse])
