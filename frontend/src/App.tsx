@@ -31,8 +31,8 @@ export default function App() {
               <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-emerald-400 rounded-full border-2 border-slate-900" />
             </div>
             <div>
-              <h1 className="text-lg font-bold leading-tight tracking-tight">Submittal Review</h1>
-              <p className="text-[11px] text-blue-300/70 font-medium tracking-wider uppercase">Modular Data Center Electrical</p>
+              <h1 className="text-lg font-bold leading-tight tracking-tight">ArcLight</h1>
+              <p className="text-[11px] text-blue-300/70 font-medium tracking-wider uppercase">Data Center Submittal Review</p>
             </div>
           </Link>
 
@@ -87,7 +87,7 @@ export default function App() {
       {/* Footer */}
       <footer className="border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-auto">
         <div className="max-w-[1400px] mx-auto px-6 py-4 flex items-center justify-between text-xs text-slate-400 dark:text-slate-500">
-          <span>DC Submittal Review Platform</span>
+          <span>ArcLight by Armada Systems</span>
           <span>NEC 2023 / NFPA 70 / IEEE / UL</span>
         </div>
       </footer>
