@@ -131,6 +131,29 @@ def serve_pdf(submittal_id: int, db: Session = Depends(get_db)):
     return FileResponse(s.file_path, media_type="application/pdf")
 
 
+@router.post("/{submittal_id}/annotate")
+def annotate_submittal(submittal_id: int, db: Session = Depends(get_db)):
+    """Generate an annotated/marked-up PDF with all review comments."""
+    from app.services.pdf_annotator import annotate_pdf
+    try:
+        annotated_path = annotate_pdf(db, submittal_id)
+        return {"annotated_file_path": annotated_path, "detail": "Annotated PDF created"}
+    except (ValueError, FileNotFoundError) as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/{submittal_id}/annotated-pdf")
+def serve_annotated_pdf(submittal_id: int, db: Session = Depends(get_db)):
+    """Serve the annotated/marked-up PDF."""
+    s = db.query(Submittal).filter(Submittal.id == submittal_id).first()
+    if not s:
+        raise HTTPException(status_code=404, detail="Submittal not found")
+    if not s.annotated_file_path or not os.path.exists(s.annotated_file_path):
+        raise HTTPException(status_code=404, detail="Annotated PDF not yet generated. Run /annotate first.")
+    return FileResponse(s.annotated_file_path, media_type="application/pdf",
+                        filename=os.path.basename(s.annotated_file_path))
+
+
 @router.delete("/{submittal_id}")
 def delete_submittal(submittal_id: int, db: Session = Depends(get_db)):
     s = db.query(Submittal).filter(Submittal.id == submittal_id).first()
