@@ -106,6 +106,17 @@ export interface DashboardStats {
   pending_review: number;
   open_comments: number;
   critical_issues: number;
+  major_issues?: number;
+  reviewed?: number;
+  approved?: number;
+  resolved_comments?: number;
+  total_rfis?: number;
+  open_rfis?: number;
+  awaiting_response?: number;
+  register_total?: number;
+  register_not_submitted?: number;
   submittals_by_status: Record<string, number>;
+  comments_by_severity?: Record<string, number>;
+  submittals_by_equipment_type?: Record<string, number>;
   recent_submittals: Array<{ id: number; title: string; equipment_type: string; status: string }>;
 }
