@@ -5,7 +5,7 @@ A desktop tool for electrical engineers reviewing submittals on modular data cen
 ## What This Tool Does
 
 - **Upload submittal PDFs** for any major equipment type (switchgear, UPS, PDUs, generators, transformers, ATS, cables, bus ducts, panelboards, RPPs, STS, batteries, cooling units)
-- **Automated review against NEC, NFPA, IEEE, UL, and Uptime Tier standards** -- 21 cross-reference checks, SLD-to-schedule validation, topology tracking, ABB/Eaton/Schneider product validation, jurisdiction detection
+- **Automated review against NEC, NFPA, IEEE, UL, and Uptime Tier standards** -- 31 cross-reference checks, protection coordination analysis, arc flash estimation, SLD-to-schedule validation, topology tracking, ABB/Eaton/Schneider/Siemens product validation, jurisdiction detection, pattern learning from engineer feedback
 - **SLD vs panel schedule cross-check** -- automatically compares every breaker designation between the single-line diagram and the detailed schedules, flagging frame size, trip rating, kAIC, and model mismatches
 - **Mark up PDFs with comments** -- generates a marked-up PDF with severity-coded annotations and a summary page you can send back to the vendor
 - **Generate RFI and response emails** -- auto-writes RFI, clarification, rejection, or approval emails grouped by severity, ready to copy into Outlook
@@ -204,7 +204,7 @@ Replace **YourName** with your Windows username. Close PowerShell when it finish
 | Battery | 21 | IEEE 485/1188, NFPA 855, UL 1973 |
 | Cooling | 32 | ASHRAE TC 9.9/90.4, NEC 440 |
 
-## Cross-Reference Checks (21 total)
+## Cross-Reference Checks (31 total)
 
 | # | Check | Standard |
 |---|-------|----------|
@@ -229,6 +229,16 @@ Replace **YourName** with your Windows username. Close PowerShell when it finish
 | 19 | Missing drawing views | Submittal Requirements |
 | 20 | Fuse schedule detection | Submittal Requirements |
 | 21 | Cable way congestion | Constructability |
+| 22 | Transformer capacity vs load | NEC 450 |
+| 23 | Voltage consistency per device | Drawing Consistency |
+| 24 | Impedance plausibility (2-12%) | IEEE C57 |
+| 25 | Pole count sanity (1-4 only) | UL 489 |
+| 26 | Conductor count vs breaker | NEC 240.4, 310.16 |
+| 27 | SLD equipment vs cut sheet coverage | Submittal Requirements |
+| 28 | Cable schedule completeness | Submittal Requirements |
+| 29 | Revision consistency | Submittal Requirements |
+| 30 | Title block consistency | Drawing Standards |
+| 31 | Protection coordination ratio | NEC 700.32, 701.27 |
 
 ## Additional Features
 
@@ -236,9 +246,20 @@ Replace **YourName** with your Windows username. Close PowerShell when it finish
 - **Naming consistency checker**: inconsistent labels, missing descriptions, mixed conventions
 - **Jurisdiction detection**: auto-detects NEC vs IEC from voltage, frequency, UL/CE references
 - **System topology**: builds upstream/downstream tree, propagates fault current
-- **Manufacturer validation**: ABB (Emax 2, Tmax XT), Eaton (Magnum, NRX, Series C), Schneider (Masterpact, Compact NSX, PowerPact)
+- **Manufacturer validation**: ABB (Emax 2, Tmax XT), Eaton (Magnum, NRX, Series C), Schneider (Masterpact, Compact NSX, PowerPact), Siemens (3WL, 3VA, 3VL)
+- **Protection coordination**: selective coordination ratio analysis, ZSI detection, ground fault coordination
+- **Arc flash estimation**: simplified IEEE 1584 incident energy, PPE category classification
+- **Pattern learning**: tracks engineer feedback (agreed/dismissed), learns to suppress noise and boost real issues
+- **NEC code commentary**: 22 articles with "why it matters" explanations shown inline
+- **Spec validation**: upload Division 26 spec, cross-reference requirements against submittal
+- **Multi-submittal cross-reference**: validates consistency between switchgear + UPS + generator + ATS submittals
+- **RFI workflow**: track RFIs from draft through vendor response to closure
+- **Approval stamps**: Approved / Approved as Noted / Revise & Resubmit / Rejected stamps on PDF
+- **Submittal register**: track what's submitted vs outstanding per project
+- **Revision comparison**: upload Rev B, see exactly what changed from Rev A
 - **Tesseract OCR**: reads scanned pages with no text layer
 - **AI Vision** (optional): Ollama/LLaVA (free) or Claude API for drawing analysis
+- **Auto-detect equipment type**: no manual selection needed — tool figures out what's in the PDF
 
 ---
 
