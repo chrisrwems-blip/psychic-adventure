@@ -19,7 +19,7 @@ class PanelboardChecker(BaseEquipmentChecker):
             CheckItem("PNL-010", "Branch breaker schedule matches design panel schedule", "Branch Circuits", "NEC 408.4", "critical"),
             CheckItem("PNL-011", "Breaker trip ratings match conductor ampacity", "Branch Circuits", "NEC 240.4", "critical"),
             CheckItem("PNL-012", "Number of spaces/circuits matches spec (with spares)", "Branch Circuits", "NEC 408", "major"),
-            CheckItem("PNL-013", "AFCI/GFCI breakers where required by code", "Branch Circuits", "NEC 210.12, 210.8", "major"),
+            CheckItem("PNL-013", "AFCI/GFCI breakers provided where required (dwelling units, bathrooms, kitchens — IT spaces are exempt per NEC)", "Branch Circuits", "NEC 210.12, 210.8", "major"),
             CheckItem("PNL-014", "Spare breaker positions per spec (typically 20%)", "Branch Circuits", "Project Spec", "minor"),
 
             # Neutral & Ground

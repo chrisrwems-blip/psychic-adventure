@@ -23,7 +23,6 @@ from app.services.cross_reference import run_cross_reference, CrossRefFinding
 
 # Checks that don't apply to data center interiors
 DC_IRRELEVANT_CHECK_IDS = {
-    "PNL-013",  # AFCI/GFCI — not required in data center IT spaces
     "PNL-040",  # Surface/flush mount — modular construction, not typical
     "PNL-042",  # Door-in-door — spec preference, not code
 }
