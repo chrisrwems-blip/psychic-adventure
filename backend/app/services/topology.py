@@ -303,19 +303,87 @@ def _infer_page_hierarchy(equipment: list) -> list:
 # ---------------------------------------------------------------------------
 
 def _propagate_fault_current(nodes: dict, root_nodes: list, equipment: list):
-    """Propagate available fault current down through the topology.
+    """Propagate estimated available fault current down through the topology.
 
-    At each transformer, fault current is recalculated based on kVA and impedance.
-    At each breaker, fault current passes through (or is limited if current-limiting).
+    Estimation approach (when actual fault study is not available):
+
+    Source A (Utility): Assume infinite bus upstream of an unknown MV transformer.
+    Typical 480V secondary fault currents for common MV transformer sizes:
+      - 1000kVA, 5.75% Z: ~20kA
+      - 1500kVA, 5.75% Z: ~30kA
+      - 2000kVA, 5.75% Z: ~40kA
+      - 2500kVA, 5.75% Z: ~50kA
+    We use 42kA as a conservative-typical estimate for utility-fed 480V systems.
+
+    Source B (Generator): Generator subtransient fault contribution is typically
+    6-10x rated current (Xd" typically 12-17% for diesel gensets).
+    For a data center with 2000kW generators at 480V:
+      - Rated I = 2000kW / (480V × 1.732 × 0.8pf) ≈ 3000A
+      - Subtransient: ~8x = ~24kA
+    We estimate generator contribution at 20kA for a typical DC generator.
+
+    Combined: When both sources can feed the bus (through bus tie), AFC is
+    the sum of both contributions: ~42 + 20 = ~62kA.
+
+    These are ESTIMATES for flagging obviously undersized equipment.
+    The actual fault current study is always required.
     """
-    # Start with a default service entrance AFC if not specified
-    DEFAULT_SERVICE_AFC_KA = 65  # Typical 480V commercial
+    # Look for actual AFC values in the SLD text
+    actual_afc = _search_for_stated_afc(nodes, equipment)
+
+    if actual_afc:
+        # Use the stated value
+        service_afc_kA = actual_afc
+    else:
+        # Estimate based on system voltage and source type
+        # Check if we have dual sources (utility + generator)
+        has_generator_source = any(
+            "generator" in (n.description or "").lower() or
+            "gen" in (n.description or "").lower() or
+            "source b" in (n.description or "").lower()
+            for n in nodes.values()
+        )
+        has_utility_source = any(
+            "utility" in (n.description or "").lower() or
+            "mains" in (n.description or "").lower() or
+            "source a" in (n.description or "").lower() or
+            "incomer" in (n.description or "").lower()
+            for n in nodes.values()
+        )
+
+        utility_afc = 42.0   # kA — typical 2000kVA MV transformer, 5.75% Z, infinite bus primary
+        generator_afc = 20.0  # kA — typical 2000kW diesel genset, ~12% Xd"
+
+        if has_utility_source and has_generator_source:
+            # Both sources can contribute through bus tie
+            service_afc_kA = utility_afc + generator_afc  # ~62kA
+        elif has_generator_source:
+            service_afc_kA = generator_afc
+        else:
+            service_afc_kA = utility_afc
 
     for root_id in root_nodes:
         root = nodes.get(root_id)
         if root:
-            root.available_fault_current_kA = DEFAULT_SERVICE_AFC_KA
-            _propagate_down(nodes, root_id, DEFAULT_SERVICE_AFC_KA, equipment)
+            root.available_fault_current_kA = service_afc_kA
+            _propagate_down(nodes, root_id, service_afc_kA, equipment)
+
+
+def _search_for_stated_afc(nodes: dict, equipment: list) -> Optional[float]:
+    """Look for explicitly stated available fault current values in equipment descriptions."""
+    for eq in equipment:
+        raw = (eq.raw_text or "").lower()
+        # Look for "available fault current: 65kA" or "AFC: 65kA" or "short circuit: 65kA"
+        patterns = [
+            r'available\s+fault\s+current\s*[:=]\s*(\d+)\s*ka',
+            r'afc\s*[:=]\s*(\d+)\s*ka',
+            r'short\s*circuit\s*(?:current)?\s*[:=]\s*(\d+)\s*ka',
+        ]
+        for pattern in patterns:
+            m = re.search(pattern, raw)
+            if m:
+                return float(m.group(1))
+    return None
 
 
 def _propagate_down(nodes: dict, node_id: str, afc_kA: float, equipment: list):
