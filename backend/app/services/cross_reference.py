@@ -31,7 +31,7 @@ from .topology import SystemTopology, TopologyNode
 from .engineering_tables import (
     NEC_310_16_75C, NEC_310_16_75C_AL, NEC_250_122,
     NEC_240_4_D, STANDARD_BREAKER_SIZES,
-    mm2_to_awg, mm2_ampacity_75c,
+    mm2_to_awg, mm2_ampacity, mm2_to_approximate_label,
     next_standard_size, min_egc_size,
     transformer_fla, transformer_max_primary_ocpd, transformer_max_secondary_ocpd,
     transformer_secondary_fault_current,
