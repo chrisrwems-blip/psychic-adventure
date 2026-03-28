@@ -2,7 +2,7 @@
 
 Scans every page for:
 - Transformers (kVA, voltage, impedance)
-- Breakers (frame, trip, poles)
+- Breakers / ACBs / MCCBs (frame, trip, poles, interrupting rating)
 - Cables (size, type, length)
 - Panels/switchboards (designation, bus rating)
 - Generators (kW, voltage)
@@ -11,6 +11,8 @@ Scans every page for:
 - PDUs (kVA, output circuits)
 - Motor starters / VFDs
 - Receptacles and branch circuits
+
+Supports formats from ABB, Eaton, Schneider, Siemens, and generic.
 """
 import re
 from dataclasses import dataclass, field
@@ -21,11 +23,10 @@ from typing import Optional
 class ExtractedEquipment:
     """A single piece of equipment found in the submittal."""
     equipment_type: str
-    designation: str  # e.g., "TX-1", "PNL-2A", "MCC-1"
+    designation: str
     page_number: int
-    raw_text: str  # The text snippet it was found in
+    raw_text: str
 
-    # Common fields
     voltage: Optional[str] = None
     amperage: Optional[str] = None
     kva: Optional[str] = None
@@ -33,30 +34,25 @@ class ExtractedEquipment:
     phases: Optional[str] = None
     frequency: Optional[str] = None
 
-    # Breaker-specific
     frame_size: Optional[str] = None
     trip_rating: Optional[str] = None
     poles: Optional[str] = None
     interrupting_rating: Optional[str] = None
 
-    # Transformer-specific
     primary_voltage: Optional[str] = None
     secondary_voltage: Optional[str] = None
     impedance: Optional[str] = None
-    winding_config: Optional[str] = None  # delta-wye, etc.
+    winding_config: Optional[str] = None
 
-    # Cable-specific
     conductor_size: Optional[str] = None
     conductor_material: Optional[str] = None
     insulation_type: Optional[str] = None
     conduit_size: Optional[str] = None
     cable_length: Optional[str] = None
 
-    # Feeder info
     fed_from: Optional[str] = None
     feeds: Optional[str] = None
 
-    # Additional attributes
     manufacturer: Optional[str] = None
     model: Optional[str] = None
     attributes: dict = field(default_factory=dict)
@@ -72,18 +68,23 @@ def extract_all_equipment(pages: list[dict]) -> list[ExtractedEquipment]:
         text_lower = page_data["text_lower"]
         page_type = page_data.get("page_type", "unknown")
 
-        # Run all extractors
-        equipment.extend(_extract_transformers(text, text_lower, page_num))
+        # Skip pages with very little text (drawings without text layers)
+        if len(text) < 30:
+            continue
+
+        # Skip cover sheets and TOC
+        if page_type in ("cover_sheet", "table_of_contents"):
+            continue
+
         equipment.extend(_extract_breakers(text, text_lower, page_num))
-        equipment.extend(_extract_panels(text, text_lower, page_num))
+        equipment.extend(_extract_transformers(text, text_lower, page_num))
+        equipment.extend(_extract_panels(text, text_lower, page_num, page_type))
         equipment.extend(_extract_cables(text, text_lower, page_num))
         equipment.extend(_extract_generators(text, text_lower, page_num))
         equipment.extend(_extract_ups_systems(text, text_lower, page_num))
         equipment.extend(_extract_ats_units(text, text_lower, page_num))
-        equipment.extend(_extract_motors(text, text_lower, page_num))
         equipment.extend(_extract_pdus(text, text_lower, page_num))
 
-        # Panel schedule-specific extraction
         if page_type == "panel_schedule":
             equipment.extend(_extract_panel_schedule_circuits(text, text_lower, page_num))
 
@@ -91,12 +92,151 @@ def extract_all_equipment(pages: list[dict]) -> list[ExtractedEquipment]:
     seen = set()
     unique = []
     for eq in equipment:
-        key = (eq.equipment_type, eq.designation.upper())
+        key = (eq.equipment_type, eq.designation.upper().strip())
         if key not in seen:
             seen.add(key)
             unique.append(eq)
 
     return unique
+
+
+# ---------------------------------------------------------------------------
+#  Breaker / ACB / MCCB extraction
+# ---------------------------------------------------------------------------
+
+def _extract_breakers(text: str, text_lower: str, page: int) -> list[ExtractedEquipment]:
+    results = []
+
+    # ABB format: "XT7H 1000", "E6.2 H 4000", "XT2H 160", "XT5 630A"
+    abb_patterns = [
+        # E-series ACBs: E1.2, E2.2, E4.2, E6.2 etc.
+        (r'(E\d+\.?\d*\s*[HNSLV]?\s*)(\d{3,5})', "ABB ACB"),
+        # XT-series MCCBs: XT1, XT2, XT4, XT5, XT7 etc.
+        (r'(XT\d+[HNSLBC]?\s*)(\d{2,5})', "ABB MCCB"),
+        # Tmax series: T1, T4, T5, T6, T7
+        (r'(Tmax\s*T\d+[HNSLV]?\s*)(\d{2,5})', "ABB Tmax"),
+        (r'\b(T\d[HNSLV]?\s+)(\d{3,5})\b', "ABB Tmax"),
+    ]
+
+    for pattern, mfr_type in abb_patterns:
+        for match in re.finditer(pattern, text):
+            model = match.group(1).strip()
+            amps = match.group(2)
+            desig = f"{model}{amps}"
+
+            context = text_lower[max(0, match.start()-50):min(match.end()+150, len(text_lower))]
+
+            eq = ExtractedEquipment(
+                equipment_type="breaker",
+                designation=desig,
+                page_number=page,
+                raw_text=text[max(0, match.start()-20):min(match.end()+80, len(text))],
+                frame_size=f"{amps}A",
+                manufacturer="ABB",
+                model=desig,
+            )
+
+            # Trip rating (often same as frame for fixed, or specified separately)
+            trip_match = re.search(r'(\d{2,5})\s*(?:at|a\s*trip)', context)
+            if trip_match:
+                eq.trip_rating = f"{trip_match.group(1)}A"
+            else:
+                eq.trip_rating = f"{amps}A"
+
+            # Interrupting rating
+            ir_match = re.search(r'(\d{2,3})\s*(?:ka|kaic)', context)
+            if ir_match:
+                eq.interrupting_rating = f"{ir_match.group(1)}kA"
+
+            # Poles
+            pole_match = re.search(r'(\d)\s*[pP](?:ole)?', context)
+            if pole_match:
+                eq.poles = pole_match.group(1)
+
+            results.append(eq)
+
+    # Generic format: "3P 1000A 65kA" or "4P 60A 65kA"
+    for match in re.finditer(r'(\d)[pP]\s+(\d{2,5})\s*[aA]\s+(\d{2,3})\s*(?:ka|kaic|kA)', text):
+        poles = match.group(1)
+        amps = match.group(2)
+        ir = match.group(3)
+
+        eq = ExtractedEquipment(
+            equipment_type="breaker",
+            designation=f"BKR-{amps}A-{poles}P-PG{page}",
+            page_number=page,
+            raw_text=text[max(0, match.start()-20):min(match.end()+50, len(text))],
+            frame_size=f"{amps}A",
+            trip_rating=f"{amps}A",
+            poles=poles,
+            interrupting_rating=f"{ir}kA",
+        )
+        results.append(eq)
+
+    # Standard format: "4000AF/4000AT" or "200A frame, 150A trip"
+    for match in re.finditer(r'(\d{2,5})\s*[aA][fF]\s*/\s*(\d{2,5})\s*[aA][tT]', text):
+        frame = match.group(1)
+        trip = match.group(2)
+        eq = ExtractedEquipment(
+            equipment_type="breaker",
+            designation=f"BKR-{frame}AF-PG{page}",
+            page_number=page,
+            raw_text=text[max(0, match.start()-20):min(match.end()+50, len(text))],
+            frame_size=f"{frame}A",
+            trip_rating=f"{trip}A",
+        )
+        results.append(eq)
+
+    for match in re.finditer(r'(\d{2,5})\s*(?:amp|a)\s+frame\s*[,/]\s*(\d{2,5})\s*(?:amp|a)\s+trip', text_lower):
+        frame = match.group(1)
+        trip = match.group(2)
+        eq = ExtractedEquipment(
+            equipment_type="breaker",
+            designation=f"BKR-{frame}AF-PG{page}",
+            page_number=page,
+            raw_text=text[max(0, match.start()-20):min(match.end()+50, len(text))],
+            frame_size=f"{frame}A",
+            trip_rating=f"{trip}A",
+        )
+        results.append(eq)
+
+    # Eaton format: "NRX", "RD", "HFD", "FD", etc. with amps
+    eaton_patterns = [
+        (r'((?:NRX|MDS|RD|HFD|FDB|FD|JD|KD|LD|MD|ND|PD)\d*[A-Z]*)\s*(\d{2,5})\s*[aA]', "Eaton"),
+    ]
+    for pattern, mfr in eaton_patterns:
+        for match in re.finditer(pattern, text):
+            model = match.group(1)
+            amps = match.group(2)
+            eq = ExtractedEquipment(
+                equipment_type="breaker",
+                designation=f"{model}-{amps}A",
+                page_number=page,
+                raw_text=text[max(0, match.start()-10):min(match.end()+50, len(text))],
+                frame_size=f"{amps}A",
+                trip_rating=f"{amps}A",
+                manufacturer=mfr,
+                model=model,
+            )
+            results.append(eq)
+
+    # Schneider format: NSX, NS, Compact etc.
+    for match in re.finditer(r'((?:NSX|NS|Compact)\s*\d*[A-Z]*)\s*(\d{2,5})\s*[aA]', text):
+        model = match.group(1).strip()
+        amps = match.group(2)
+        eq = ExtractedEquipment(
+            equipment_type="breaker",
+            designation=f"{model}-{amps}A",
+            page_number=page,
+            raw_text=text[max(0, match.start()-10):min(match.end()+50, len(text))],
+            frame_size=f"{amps}A",
+            trip_rating=f"{amps}A",
+            manufacturer="Schneider",
+            model=model,
+        )
+        results.append(eq)
+
+    return results
 
 
 # ---------------------------------------------------------------------------
@@ -106,38 +246,52 @@ def extract_all_equipment(pages: list[dict]) -> list[ExtractedEquipment]:
 def _extract_transformers(text: str, text_lower: str, page: int) -> list[ExtractedEquipment]:
     results = []
 
-    # Pattern: TX-1, T-1, XFMR-1, etc. with kVA
+    # "Sn=27.78[kVA]" (ABB style in SLDs)
+    for match in re.finditer(r'[Ss]n\s*=\s*(\d+\.?\d*)\s*\[?kva\]?', text_lower):
+        kva_val = match.group(1)
+        eq = ExtractedEquipment(
+            equipment_type="transformer",
+            designation=f"TX-{kva_val}kVA-PG{page}",
+            page_number=page,
+            raw_text=text[max(0, match.start()-30):min(match.end()+80, len(text))],
+            kva=kva_val,
+        )
+        results.append(eq)
+
+    # Standard patterns: "TX-1 300kVA", "300kVA transformer", etc.
     patterns = [
         r'((?:tx|xfmr|t|tr)[-\s]*\d+[a-z]?)\s*[:\-\s]+(\d+)\s*kva',
-        r'(\d+)\s*kva\s+(?:transformer|xfmr)\s*(?:[-\s]*((?:tx|t)[-\s]*\d+[a-z]?))?',
-        r'transformer\s+((?:tx|t|xfmr)[-\s]*\d+[a-z]?)[:\s]+(\d+)\s*kva',
+        r'(\d{2,5})\s*kva\s+(?:dry[- ]?type\s+)?(?:transformer|xfmr)',
+        r'transformer\s*.*?(\d{2,5})\s*kva',
     ]
-
     for pattern in patterns:
         for match in re.finditer(pattern, text_lower):
             groups = match.groups()
-            desig = groups[0].strip().upper() if groups[0] else f"TX-{page}"
+            desig = None
             kva_val = None
             for g in groups:
-                if g and g.isdigit():
-                    kva_val = g
-                    break
+                if g and re.match(r'\d+$', g.strip()):
+                    kva_val = g.strip()
+                elif g and not g.strip().isdigit():
+                    desig = g.strip().upper()
+
+            if not desig:
+                desig = f"TX-{kva_val}kVA-PG{page}" if kva_val else f"TX-PG{page}"
 
             eq = ExtractedEquipment(
                 equipment_type="transformer",
                 designation=desig,
                 page_number=page,
-                raw_text=text[max(0, match.start()-20):match.end()+50],
+                raw_text=text[max(0, match.start()-20):min(match.end()+80, len(text))],
                 kva=kva_val,
             )
 
-            # Look for impedance near this match
-            context = text_lower[max(0, match.start()-100):match.end()+200]
-            imp_match = re.search(r'(\d+\.?\d*)\s*%?\s*(?:impedance|z)', context)
+            context = text_lower[max(0, match.start()-100):min(match.end()+200, len(text_lower))]
+
+            imp_match = re.search(r'(\d+\.?\d*)\s*%?\s*(?:impedance|z\b)', context)
             if imp_match:
                 eq.impedance = imp_match.group(1)
 
-            # Look for voltage
             volt_match = re.findall(r'(\d{3,5})\s*(?:v|volt)', context)
             if len(volt_match) >= 2:
                 eq.primary_voltage = volt_match[0]
@@ -145,141 +299,69 @@ def _extract_transformers(text: str, text_lower: str, page: int) -> list[Extract
             elif volt_match:
                 eq.voltage = volt_match[0]
 
-            # Winding config
-            if "delta" in context and "wye" in context:
-                eq.winding_config = "delta-wye"
-            elif "wye" in context:
-                eq.winding_config = "wye-wye"
-
-            results.append(eq)
-
-    # Also catch standalone kVA transformer mentions
-    for match in re.finditer(r'(\d{2,5})\s*kva\s+(?:dry[- ]?type\s+)?transformer', text_lower):
-        kva_val = match.group(1)
-        eq = ExtractedEquipment(
-            equipment_type="transformer",
-            designation=f"TX-PG{page}",
-            page_number=page,
-            raw_text=text[max(0, match.start()-10):match.end()+50],
-            kva=kva_val,
-        )
-        results.append(eq)
-
-    return results
-
-
-# ---------------------------------------------------------------------------
-#  Breaker extraction
-# ---------------------------------------------------------------------------
-
-def _extract_breakers(text: str, text_lower: str, page: int) -> list[ExtractedEquipment]:
-    results = []
-
-    # Pattern: breaker designations with frame/trip
-    # e.g., "Main Breaker: 4000AF/4000AT" or "200A frame, 150A trip"
-    patterns = [
-        r'(\d{2,5})\s*a[ft]\s*/\s*(\d{2,5})\s*a[ft]',  # 800AF/800AT
-        r'(\d{2,5})\s*(?:amp|a)\s+frame\s*[,/]\s*(\d{2,5})\s*(?:amp|a)\s+trip',
-        r'frame\s*[:\s]*(\d{2,5})\s*a\s*[,/]\s*trip\s*[:\s]*(\d{2,5})\s*a',
-    ]
-
-    for pattern in patterns:
-        for match in re.finditer(pattern, text_lower):
-            frame = match.group(1)
-            trip = match.group(2)
-
-            # Look for designation nearby
-            context = text_lower[max(0, match.start()-80):match.start()]
-            desig_match = re.search(r'((?:cb|br|bkr|breaker)[-\s]*\d+[a-z]?)', context)
-            desig = desig_match.group(1).upper() if desig_match else f"BKR-{frame}AF-PG{page}"
-
-            eq = ExtractedEquipment(
-                equipment_type="breaker",
-                designation=desig,
-                page_number=page,
-                raw_text=text[max(0, match.start()-20):match.end()+30],
-                frame_size=f"{frame}A",
-                trip_rating=f"{trip}A",
-            )
-
-            # Look for interrupting rating
-            ir_context = text_lower[match.start():match.end()+100]
-            ir_match = re.search(r'(\d{2,3})\s*(?:ka|kaic)', ir_context)
-            if ir_match:
-                eq.interrupting_rating = f"{ir_match.group(1)}kA"
-
-            # Poles
-            pole_match = re.search(r'(\d)\s*(?:pole|p\b)', ir_context)
-            if pole_match:
-                eq.poles = pole_match.group(1)
-
-            results.append(eq)
-
-    # Catch simpler breaker mentions: "200A breaker", "100AT"
-    for match in re.finditer(r'(\d{2,5})\s*(?:at|af)\b', text_lower):
-        val = match.group(1)
-        context = text_lower[max(0, match.start()-50):match.end()+50]
-        if "breaker" in context or "circuit" in context or "cb" in context:
-            eq = ExtractedEquipment(
-                equipment_type="breaker",
-                designation=f"BKR-{val}A-PG{page}",
-                page_number=page,
-                raw_text=text[max(0, match.start()-10):match.end()+30],
-                trip_rating=f"{val}A",
-            )
             results.append(eq)
 
     return results
 
 
 # ---------------------------------------------------------------------------
-#  Panel/switchboard extraction
+#  Panel / Switchboard extraction — smarter filtering
 # ---------------------------------------------------------------------------
 
-def _extract_panels(text: str, text_lower: str, page: int) -> list[ExtractedEquipment]:
+def _extract_panels(text: str, text_lower: str, page: int, page_type: str) -> list[ExtractedEquipment]:
     results = []
 
-    # Panel designations: PNL-1, LP-A, DP-1, MDP, etc.
-    patterns = [
-        r'((?:pnl|panel|lp|dp|mdp|msp|swbd|sb|switchboard|mcc)[-\s]*[a-z0-9]{1,5})',
-        r'panel\s+["\']?((?:[a-z]{1,3}[-\s]*\d{1,3}[a-z]?))["\']?',
+    # Only extract panels from SLDs, panel schedules, and equipment schedules
+    # Skip cut sheets and specs — too many false positives from marketing text
+    if page_type in ("cut_sheet", "specification", "unknown", "general_notes"):
+        return results
+
+    # Named panels: "MAIN DISTRIBUTION PANEL", "MECH UPS DISTRIBUTION PANEL", etc.
+    panel_patterns = [
+        r'((?:main|mech|it|ups|utility|emergency)\s+(?:distribution\s+)?(?:panel|board|switchboard|mcc))',
+        r'((?:mdp|msp|swbd|mcc|dp|lp|pp)[-\s]*[a-z0-9]{1,5})',
     ]
 
-    for pattern in patterns:
+    for pattern in panel_patterns:
         for match in re.finditer(pattern, text_lower):
-            desig = match.group(1).strip().upper()
-            if len(desig) < 2:
+            desig = match.group(1).strip().upper().replace(" ", "_")
+            if len(desig) < 3:
                 continue
 
-            context = text_lower[match.start():min(match.end()+300, len(text_lower))]
+            context = text_lower[match.start():min(match.end()+200, len(text_lower))]
 
             eq = ExtractedEquipment(
                 equipment_type="panel",
                 designation=desig,
                 page_number=page,
-                raw_text=text[max(0, match.start()-10):min(match.end()+100, len(text))],
+                raw_text=text[max(0, match.start()-10):min(match.end()+80, len(text))],
             )
 
-            # Bus rating
-            bus_match = re.search(r'(\d{2,5})\s*(?:a|amp)\s*(?:bus|main)', context)
+            # Bus rating (look for "480V 4000A BUSBAR" style)
+            bus_match = re.search(r'(\d{3,5})\s*v\s+(\d{2,5})\s*a\s*(?:bus)', context)
             if bus_match:
-                eq.amperage = f"{bus_match.group(1)}A"
-
-            # Voltage
-            volt_match = re.search(r'(\d{3})\s*/\s*(\d{3})\s*v', context)
-            if volt_match:
-                eq.voltage = f"{volt_match.group(1)}/{volt_match.group(2)}V"
+                eq.voltage = f"{bus_match.group(1)}V"
+                eq.amperage = f"{bus_match.group(2)}A"
             else:
-                volt_match2 = re.search(r'(\d{3,5})\s*v', context)
-                if volt_match2:
-                    eq.voltage = f"{volt_match2.group(1)}V"
-
-            # Fed from
-            fed_match = re.search(r'fed\s+from\s+([\w\-]+)', context)
-            if fed_match:
-                eq.fed_from = fed_match.group(1).upper()
+                amp_match = re.search(r'(\d{2,5})\s*(?:a|amp)\s*(?:bus|main|rating)', context)
+                if amp_match:
+                    eq.amperage = f"{amp_match.group(1)}A"
 
             results.append(eq)
+
+    # "480V 4000A BUSBAR" patterns (common in ABB SLDs)
+    for match in re.finditer(r'(\d{3,5})\s*v\s+(\d{3,5})\s*a\s*\n?\s*busbar', text_lower):
+        voltage = match.group(1)
+        amps = match.group(2)
+        eq = ExtractedEquipment(
+            equipment_type="panel",
+            designation=f"BUS-{voltage}V-{amps}A-PG{page}",
+            page_number=page,
+            raw_text=text[max(0, match.start()-10):min(match.end()+30, len(text))],
+            voltage=f"{voltage}V",
+            amperage=f"{amps}A",
+        )
+        results.append(eq)
 
     return results
 
@@ -291,13 +373,10 @@ def _extract_panels(text: str, text_lower: str, page: int) -> list[ExtractedEqui
 def _extract_cables(text: str, text_lower: str, page: int) -> list[ExtractedEquipment]:
     results = []
 
-    # Cable designations with sizes
-    # "3#500 kcmil + 1#250 kcmil GND in 4" conduit"
-    # "#4/0 AWG copper THHN"
     cable_patterns = [
         r'(\d+)\s*#\s*(\d{1,4})\s*(kcmil|awg)',
         r'(\d{1,4})\s*(awg|kcmil)\s+(copper|aluminum|cu|al)',
-        r'((?:\d+[-/]\d+|\d{1,4})\s*(?:awg|kcmil)).*?(thhn|xhhw|thwn|mc|so|use)',
+        r'((?:\d+[-/]\d+|\d{1,4})\s*(?:awg|kcmil)).*?(thhn|xhhw|thwn|mc|use)',
     ]
 
     for pattern in cable_patterns:
@@ -313,24 +392,36 @@ def _extract_cables(text: str, text_lower: str, page: int) -> list[ExtractedEqui
                 conductor_size=match.group(0).strip(),
             )
 
-            # Material
             if "copper" in context or " cu " in context:
                 eq.conductor_material = "copper"
             elif "aluminum" in context or " al " in context:
                 eq.conductor_material = "aluminum"
 
-            # Insulation
             for ins_type in ["thhn", "xhhw", "thwn", "use-2", "rhh", "rhw"]:
                 if ins_type in context:
                     eq.insulation_type = ins_type.upper()
                     break
 
-            # Conduit
             conduit_match = re.search(r'(\d+[/.]?\d*)\s*["\u2033]?\s*(?:conduit|emt|imc|rmc|pvc)', context)
             if conduit_match:
                 eq.conduit_size = conduit_match.group(1) + '"'
 
             results.append(eq)
+
+    # Also catch "Rx1Cx300mm" style cable specs (metric, common in European/ABB submittals)
+    for match in re.finditer(r'(\d+)[rR]x(\d+)[cC]x(\d+)\s*mm', text):
+        runs = match.group(1)
+        conductors = match.group(2)
+        size_mm = match.group(3)
+        eq = ExtractedEquipment(
+            equipment_type="cable",
+            designation=f"CABLE-{runs}Rx{conductors}Cx{size_mm}mm-PG{page}",
+            page_number=page,
+            raw_text=text[max(0, match.start()-10):min(match.end()+50, len(text))],
+            conductor_size=f"{runs}x{conductors}x{size_mm}mm²",
+            attributes={"runs": runs, "conductors": conductors, "size_mm2": size_mm},
+        )
+        results.append(eq)
 
     return results
 
@@ -366,20 +457,9 @@ def _extract_generators(text: str, text_lower: str, page: int) -> list[Extracted
                 equipment_type="generator",
                 designation=desig,
                 page_number=page,
-                raw_text=text[max(0, match.start()-10):match.end()+50],
+                raw_text=text[max(0, match.start()-10):min(match.end()+50, len(text))],
                 kw=kw_val,
             )
-
-            context = text_lower[match.start():match.end()+200]
-            if "diesel" in context:
-                eq.attributes["fuel_type"] = "diesel"
-            elif "natural gas" in context:
-                eq.attributes["fuel_type"] = "natural_gas"
-
-            volt_match = re.search(r'(\d{3,5})\s*v', context)
-            if volt_match:
-                eq.voltage = f"{volt_match.group(1)}V"
-
             results.append(eq)
 
     return results
@@ -416,17 +496,12 @@ def _extract_ups_systems(text: str, text_lower: str, page: int) -> list[Extracte
                 equipment_type="ups",
                 designation=desig,
                 page_number=page,
-                raw_text=text[max(0, match.start()-10):match.end()+50],
+                raw_text=text[max(0, match.start()-10):min(match.end()+50, len(text))],
                 kva=kva_val,
             )
-
-            context = text_lower[match.start():match.end()+200]
-            if "double conversion" in context or "double-conversion" in context:
-                eq.attributes["topology"] = "double_conversion"
-
             results.append(eq)
 
-    # Also catch "UPS Modules" style references
+    # "UPS Module" references
     for match in re.finditer(r'ups\s+module', text_lower):
         context = text_lower[match.start():min(match.end()+200, len(text_lower))]
         eq = ExtractedEquipment(
@@ -453,7 +528,6 @@ def _extract_ats_units(text: str, text_lower: str, page: int) -> list[ExtractedE
     patterns = [
         r'((?:ats)[-\s]*\d+[a-z]?)\s*[:\-\s]+(\d+)\s*(?:a|amp)',
         r'(\d{2,5})\s*(?:a|amp)\s+(?:ats|transfer\s+switch)',
-        r'(?:ats|automatic\s+transfer\s+switch)\s*.*?(\d{2,5})\s*(?:a|amp)',
     ]
 
     for pattern in patterns:
@@ -474,46 +548,8 @@ def _extract_ats_units(text: str, text_lower: str, page: int) -> list[ExtractedE
                 equipment_type="ats",
                 designation=desig,
                 page_number=page,
-                raw_text=text[max(0, match.start()-10):match.end()+50],
+                raw_text=text[max(0, match.start()-10):min(match.end()+50, len(text))],
                 amperage=f"{amp_val}A" if amp_val else None,
-            )
-            results.append(eq)
-
-    return results
-
-
-# ---------------------------------------------------------------------------
-#  Motor extraction
-# ---------------------------------------------------------------------------
-
-def _extract_motors(text: str, text_lower: str, page: int) -> list[ExtractedEquipment]:
-    results = []
-
-    patterns = [
-        r'((?:mtr|motor|m)[-\s]*\d+[a-z]?)\s*[:\-\s]+(\d+)\s*hp',
-        r'(\d{1,4})\s*hp\s+motor',
-    ]
-
-    for pattern in patterns:
-        for match in re.finditer(pattern, text_lower):
-            groups = match.groups()
-            desig = None
-            hp_val = None
-            for g in groups:
-                if g and re.match(r'\d{1,4}$', g):
-                    hp_val = g
-                elif g and not g.isdigit():
-                    desig = g.strip().upper()
-
-            if not desig:
-                desig = f"MTR-PG{page}"
-
-            eq = ExtractedEquipment(
-                equipment_type="motor",
-                designation=desig,
-                page_number=page,
-                raw_text=text[max(0, match.start()-10):match.end()+50],
-                attributes={"hp": hp_val} if hp_val else {},
             )
             results.append(eq)
 
@@ -538,9 +574,9 @@ def _extract_pdus(text: str, text_lower: str, page: int) -> list[ExtractedEquipm
             desig = None
             kva_val = None
             for g in groups:
-                if g and re.match(r'\d{2,4}$', g):
-                    kva_val = g
-                elif g and not g.isdigit():
+                if g and re.match(r'\d{2,4}$', g.strip()):
+                    kva_val = g.strip()
+                elif g and not g.strip().isdigit():
                     desig = g.strip().upper()
 
             if not desig:
@@ -550,7 +586,7 @@ def _extract_pdus(text: str, text_lower: str, page: int) -> list[ExtractedEquipm
                 equipment_type="pdu",
                 designation=desig,
                 page_number=page,
-                raw_text=text[max(0, match.start()-10):match.end()+50],
+                raw_text=text[max(0, match.start()-10):min(match.end()+50, len(text))],
                 kva=kva_val,
             )
             results.append(eq)
@@ -566,7 +602,6 @@ def _extract_panel_schedule_circuits(text: str, text_lower: str, page: int) -> l
     """Extract individual circuits from a panel schedule page."""
     results = []
 
-    # Look for circuit patterns: "1  20A  1P  #12 AWG  Lighting"
     circuit_pattern = r'(\d{1,3})\s+(\d{1,3})\s*(?:a|at)\s+(\d)\s*(?:p|pole)'
     for match in re.finditer(circuit_pattern, text_lower):
         ckt_num = match.group(1)
@@ -584,7 +619,6 @@ def _extract_panel_schedule_circuits(text: str, text_lower: str, page: int) -> l
             poles=poles,
         )
 
-        # Wire size
         wire_match = re.search(r'#(\d{1,2})\s*(?:awg)?', context)
         if wire_match:
             eq.conductor_size = f"#{wire_match.group(1)} AWG"
