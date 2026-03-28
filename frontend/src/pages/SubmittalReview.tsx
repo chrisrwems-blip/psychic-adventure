@@ -29,6 +29,8 @@ export default function SubmittalReview() {
   const [activeTab, setActiveTab] = useState<'review' | 'comments' | 'email' | 'pdf'>('review');
   const [reviewing, setReviewing] = useState(false);
   const [annotating, setAnnotating] = useState(false);
+  const [hasAnnotated, setHasAnnotated] = useState(false);
+  const [viewingMarkup, setViewingMarkup] = useState(false);
   const [reviewSummary, setReviewSummary] = useState<any>(null);
   const [newComment, setNewComment] = useState({ comment_text: '', severity: 'info', reference_code: '' });
   const [emailForm, setEmailForm] = useState({ email_type: 'clarification', recipients: '', additional_notes: '' });
@@ -48,6 +50,7 @@ export default function SubmittalReview() {
       setResults(resRes.data);
       setComments(comRes.data);
       setEmails(emRes.data);
+      if (subRes.data.annotated_file_path) setHasAnnotated(true);
     } catch (e) {
       console.error('Failed to load', e);
     }
@@ -70,9 +73,10 @@ export default function SubmittalReview() {
     setAnnotating(true);
     try {
       await annotateSubmittal(Number(submittalId));
+      setHasAnnotated(true);
+      setViewingMarkup(true);
+      setActiveTab('pdf');
       loadData();
-      // Open annotated PDF in new tab
-      window.open(getAnnotatedPdfUrl(Number(submittalId)), '_blank');
     } catch (e) {
       console.error('Annotation failed', e);
     } finally {
@@ -433,11 +437,48 @@ export default function SubmittalReview() {
 
       {activeTab === 'pdf' && (
         <div className="bg-white rounded-lg shadow">
+          {/* PDF toolbar */}
+          <div className="flex items-center justify-between px-4 py-2 border-b bg-gray-50 rounded-t-lg">
+            <div className="flex gap-2">
+              <button
+                onClick={() => setViewingMarkup(false)}
+                className={`px-3 py-1 rounded text-sm font-medium ${!viewingMarkup ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+              >
+                Original PDF
+              </button>
+              <button
+                onClick={() => { if (hasAnnotated) setViewingMarkup(true); }}
+                disabled={!hasAnnotated}
+                className={`px-3 py-1 rounded text-sm font-medium ${viewingMarkup ? 'bg-purple-600 text-white' : hasAnnotated ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}
+              >
+                Marked Up PDF
+              </button>
+            </div>
+            <div className="flex gap-2">
+              {viewingMarkup && hasAnnotated && (
+                <a
+                  href={getAnnotatedPdfUrl(Number(submittalId))}
+                  download
+                  className="px-3 py-1 bg-green-600 text-white rounded text-sm font-medium hover:bg-green-700"
+                >
+                  Download Marked Up PDF
+                </a>
+              )}
+              <a
+                href={viewingMarkup && hasAnnotated ? getAnnotatedPdfUrl(Number(submittalId)) : getSubmittalPdfUrl(Number(submittalId))}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300"
+              >
+                Open in New Tab
+              </a>
+            </div>
+          </div>
           <iframe
-            src={getSubmittalPdfUrl(Number(submittalId))}
-            className="w-full rounded-lg"
+            src={viewingMarkup && hasAnnotated ? getAnnotatedPdfUrl(Number(submittalId)) : getSubmittalPdfUrl(Number(submittalId))}
+            className="w-full rounded-b-lg"
             style={{ height: '80vh' }}
-            title="Submittal PDF"
+            title={viewingMarkup ? 'Marked Up PDF' : 'Submittal PDF'}
           />
         </div>
       )}
