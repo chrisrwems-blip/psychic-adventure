@@ -21,6 +21,7 @@ from app.services.equipment_extractor import extract_all_equipment, ExtractedEqu
 from app.services.cross_reference import run_cross_reference, CrossRefFinding
 from app.services.topology import build_topology
 from app.services.jurisdiction import detect_jurisdiction
+from app.services.sld_schedule_crosscheck import extract_schedule_entries, crosscheck_sld_vs_schedule
 
 
 # Checks that don't apply to data center interiors
@@ -185,8 +186,13 @@ def run_full_review(db: Session, submittal_id: int, has_spec: bool = False) -> d
     # --- Step 4b: Build system topology ---
     topology = build_topology(all_equipment, pages)
 
+    # --- Step 4c: SLD vs Schedule cross-check ---
+    sld_entries, schedule_entries = extract_schedule_entries(pages)
+    sld_xcheck_findings = crosscheck_sld_vs_schedule(sld_entries, schedule_entries)
+
     # --- Step 5: Cross-reference equipment (topology-aware) ---
     cross_ref_findings = run_cross_reference(all_equipment, topology, pages)
+    cross_ref_findings.extend(sld_xcheck_findings)
 
     # Add jurisdiction warnings as findings
     for warning in jurisdiction.warnings:
@@ -358,6 +364,9 @@ def run_full_review(db: Session, submittal_id: int, has_spec: bool = False) -> d
             for eq in all_equipment
         ],
         "equipment_count": len(all_equipment),
+        "sld_entries": len(sld_entries),
+        "schedule_entries": len(schedule_entries),
+        "sld_schedule_findings": len(sld_xcheck_findings),
         "topology_nodes": len(topology.nodes),
         "topology_relationships": len(topology.relationships),
         "topology_root_nodes": topology.root_nodes[:10],
