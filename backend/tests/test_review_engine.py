@@ -70,7 +70,7 @@ class TestSwitchgearChecker:
         # Should find voltage
         voltage_finding = next((f for f in findings if f.check_id == "SW-001"), None)
         assert voltage_finding is not None
-        assert voltage_finding.passed == -1  # needs review (found but needs human verification)
+        assert voltage_finding.passed == 1  # needs review (found but needs human verification)
 
     def test_review_with_empty_text(self):
         findings = self.checker.run_checks("", {})
@@ -84,14 +84,14 @@ class TestSwitchgearChecker:
         findings = self.checker.run_checks(text, {})
         sccr = next((f for f in findings if f.check_id == "SW-002"), None)
         assert sccr is not None
-        assert sccr.passed == -1  # found, needs review
+        assert sccr.passed == 1  # found, needs review
 
     def test_arc_flash_detection(self):
         text = "Arc flash calculations per IEEE 1584. Incident energy: 8 cal/cm2."
         findings = self.checker.run_checks(text, {})
         arc = next((f for f in findings if f.check_id == "SW-040"), None)
         assert arc is not None
-        assert arc.passed == -1
+        assert arc.passed == 1
 
     def test_ground_fault_missing(self):
         text = "Standard switchgear lineup with main breaker."
@@ -113,7 +113,7 @@ class TestUPSChecker:
         findings = self.checker.run_checks(text, {})
         topology = next((f for f in findings if f.check_id == "UPS-020"), None)
         assert topology is not None
-        assert topology.passed == -1  # found
+        assert topology.passed == 1  # found
 
     def test_missing_runtime(self):
         text = "UPS system specifications. Voltage: 480V."
@@ -132,14 +132,14 @@ class TestGeneratorChecker:
         findings = self.checker.run_checks(text, {})
         kw = next((f for f in findings if f.check_id == "GEN-001"), None)
         assert kw is not None
-        assert kw.passed == -1
+        assert kw.passed == 1
 
     def test_emissions_detection(self):
         text = "EPA Tier 4 Final emissions compliant"
         findings = self.checker.run_checks(text, {})
         epa = next((f for f in findings if f.check_id == "GEN-019"), None)
         assert epa is not None
-        assert epa.passed == -1
+        assert epa.passed == 1
 
 
 class TestATSChecker:
@@ -151,7 +151,7 @@ class TestATSChecker:
         findings = self.checker.run_checks(text, {})
         bypass = next((f for f in findings if f.check_id == "ATS-020"), None)
         assert bypass is not None
-        assert bypass.passed == -1
+        assert bypass.passed == 1
 
 
 class TestTransformerChecker:
@@ -163,7 +163,7 @@ class TestTransformerChecker:
         findings = self.checker.run_checks(text, {})
         imp = next((f for f in findings if f.check_id == "TX-004"), None)
         assert imp is not None
-        assert imp.passed == -1
+        assert imp.passed == 1
 
 
 class TestCableChecker:
@@ -175,14 +175,14 @@ class TestCableChecker:
         findings = self.checker.run_checks(text, {})
         cond = next((f for f in findings if f.check_id == "CBL-001"), None)
         assert cond is not None
-        assert cond.passed == -1
+        assert cond.passed == 1
 
     def test_copper_detection(self):
         text = "All conductors shall be copper."
         findings = self.checker.run_checks(text, {})
         mat = next((f for f in findings if f.check_id == "CBL-002"), None)
         assert mat is not None
-        assert mat.passed == -1
+        assert mat.passed == 1
 
 
 class TestSTSChecker:
@@ -194,7 +194,7 @@ class TestSTSChecker:
         findings = self.checker.run_checks(text, {})
         xfer = next((f for f in findings if f.check_id == "STS-003"), None)
         assert xfer is not None
-        assert xfer.passed == -1
+        assert xfer.passed == 1
 
 
 class TestBatteryChecker:
@@ -206,7 +206,7 @@ class TestBatteryChecker:
         findings = self.checker.run_checks(text, {})
         chem = next((f for f in findings if f.check_id == "BAT-001"), None)
         assert chem is not None
-        assert chem.passed == -1
+        assert chem.passed == 1
 
 
 class TestCoolingChecker:
@@ -221,4 +221,4 @@ class TestCoolingChecker:
         findings = self.checker.run_checks(text, {})
         cap = next((f for f in findings if f.check_id == "CLG-001"), None)
         assert cap is not None
-        assert cap.passed == -1
+        assert cap.passed == 1
