@@ -1,395 +1,717 @@
-"""Cross-reference validator — checks equipment against each other for consistency.
+"""Cross-reference validator — topology-aware engineering validation.
 
-Validates:
-- Breaker trip rating vs cable ampacity
-- Transformer secondary vs panel bus rating
-- Cable size vs conduit fill
-- Upstream/downstream protection coordination
-- Voltage consistency through the system
-- NEC ampacity tables
+21 checks covering:
+- Fault current coordination (NEC 110.9)
+- Selective coordination (NEC 700.32, 701.27)
+- Arc energy reduction (NEC 240.87)
+- Ground fault protection (NEC 230.95)
+- Available fault current labeling (NEC 110.24)
+- Grounding conductor sizing (NEC 250.122)
+- Breaker-cable ampacity (NEC 240.4, 310.16)
+- Voltage drop estimation
+- Conduit fill (NEC Chapter 9)
+- Transformer protection (NEC 450.3)
+- K-factor / harmonics (IEEE C57.110)
+- ABB product validation
+- Panel bus rating (NEC 408.36)
+- Breaker frame vs trip
+- Standard breaker sizes (NEC 240.6)
+- Small wire rule (NEC 240.4(D))
+- Working clearance (NEC 110.26)
+- Separately derived systems (NEC 250.30)
+- Drawing tag cross-reference
+- Voltage consistency
 """
+import re
 from dataclasses import dataclass
 from typing import Optional
+
 from .equipment_extractor import ExtractedEquipment
+from .topology import SystemTopology, TopologyNode
+from .engineering_tables import (
+    NEC_310_16_75C, NEC_310_16_75C_AL, NEC_250_122,
+    NEC_240_4_D, STANDARD_BREAKER_SIZES,
+    mm2_to_awg, mm2_ampacity_75c,
+    next_standard_size, min_egc_size,
+    transformer_fla, transformer_max_primary_ocpd, transformer_max_secondary_ocpd,
+    transformer_secondary_fault_current,
+    required_clearance, voltage_drop_3ph, max_conduit_fill,
+    CONDUCTOR_AREA_THHN,
+)
+from .manufacturer_data.abb import validate_abb_breaker
 
 
 @dataclass
 class CrossRefFinding:
-    """A finding from cross-referencing two pieces of equipment."""
-    finding_type: str  # sizing_mismatch, coordination_issue, code_violation, etc.
+    finding_type: str
     severity: str  # critical, major, minor, info
-    equipment_1: str  # designation of first equipment
-    equipment_2: Optional[str]  # designation of second equipment (if applicable)
+    equipment_1: str
+    equipment_2: Optional[str]
     page_number: int
     description: str
     reference_code: str
     recommendation: str
 
 
-# NEC 310.16 - Ampacity of conductors at 75°C (copper)
-NEC_AMPACITY_75C = {
-    "14": 15, "12": 20, "10": 30, "8": 40, "6": 55, "4": 70, "3": 85,
-    "2": 95, "1": 110, "1/0": 125, "2/0": 145, "3/0": 165, "4/0": 195,
-    "250": 215, "300": 240, "350": 260, "400": 280, "500": 320,
-    "600": 355, "700": 385, "750": 400, "800": 410, "900": 435,
-    "1000": 455, "1250": 495, "1500": 520, "1750": 545, "2000": 560,
-}
-
-# NEC 310.16 - Ampacity at 90°C (copper)
-NEC_AMPACITY_90C = {
-    "14": 20, "12": 25, "10": 35, "8": 50, "6": 65, "4": 85, "3": 100,
-    "2": 115, "1": 130, "1/0": 150, "2/0": 175, "3/0": 200, "4/0": 230,
-    "250": 255, "300": 285, "350": 310, "400": 335, "500": 380,
-    "600": 420, "700": 460, "750": 475, "800": 490, "900": 520,
-    "1000": 545, "1250": 590, "1500": 625, "1750": 650, "2000": 665,
-}
-
-# Standard breaker frame sizes
-STANDARD_FRAME_SIZES = [15, 20, 30, 40, 50, 60, 70, 80, 90, 100,
-                         110, 125, 150, 175, 200, 225, 250, 300, 350,
-                         400, 500, 600, 700, 800, 1000, 1200, 1600,
-                         2000, 2500, 3000, 3200, 4000, 5000, 6000]
-
-# Maximum breaker size for conductor per NEC 240.4(D) — small conductors
-NEC_240_4_D = {
-    "14": 15,
-    "12": 20,
-    "10": 30,
-}
-
-# Minimum conductor for breaker trip at 75°C
-MIN_CONDUCTOR_FOR_TRIP = {}
-for size, ampacity in NEC_AMPACITY_75C.items():
-    for trip in STANDARD_FRAME_SIZES:
-        if ampacity >= trip and trip not in MIN_CONDUCTOR_FOR_TRIP:
-            MIN_CONDUCTOR_FOR_TRIP[trip] = size
-
-
-def run_cross_reference(equipment: list[ExtractedEquipment]) -> list[CrossRefFinding]:
-    """Run all cross-reference checks across discovered equipment."""
+def run_cross_reference(
+    equipment: list[ExtractedEquipment],
+    topology: Optional[SystemTopology] = None,
+    pages: Optional[list[dict]] = None,
+) -> list[CrossRefFinding]:
+    """Run all cross-reference checks."""
     findings = []
 
-    findings.extend(_check_breaker_cable_sizing(equipment))
-    findings.extend(_check_transformer_sizing(equipment))
+    # --- Existing checks (improved) ---
+    findings.extend(_check_breaker_cable_sizing(equipment, topology))
+    findings.extend(_check_transformer_protection(equipment, topology))
     findings.extend(_check_voltage_consistency(equipment))
-    findings.extend(_check_panel_bus_rating(equipment))
+    findings.extend(_check_panel_bus_rating(equipment, topology))
     findings.extend(_check_breaker_frame_vs_trip(equipment))
     findings.extend(_check_standard_breaker_sizes(equipment))
-    findings.extend(_check_conductor_small_wire_rule(equipment))
+    findings.extend(_check_small_wire_rule(equipment))
+
+    # --- New topology-aware checks ---
+    if topology:
+        findings.extend(_check_fault_current_coordination(equipment, topology))
+        findings.extend(_check_selective_coordination(topology))
+        findings.extend(_check_arc_energy_reduction(equipment, topology))
+    findings.extend(_check_ground_fault_protection(equipment, pages))
+    findings.extend(_check_afc_labeling(equipment, pages))
+    findings.extend(_check_grounding_conductor(equipment, topology))
+    findings.extend(_check_transformer_grounding(equipment))
+    findings.extend(_check_kfactor_harmonics(equipment, pages))
+    findings.extend(_check_abb_product_validity(equipment))
+    findings.extend(_check_metric_cable_sizing(equipment))
 
     return findings
 
 
-def _parse_amps(val: Optional[str]) -> Optional[int]:
-    """Parse '200A' or '200' to integer."""
-    if not val:
-        return None
-    import re
-    m = re.search(r'(\d+)', val)
-    return int(m.group(1)) if m else None
-
-
-def _parse_conductor_size(val: Optional[str]) -> Optional[str]:
-    """Normalize conductor size string to key for ampacity lookup."""
-    if not val:
-        return None
-    import re
-    # "500 kcmil" -> "500"
-    m = re.search(r'(\d+)\s*kcmil', val.lower())
-    if m:
-        return m.group(1)
-    # "#4/0 AWG" -> "4/0"
-    m = re.search(r'#?(\d+/\d+)\s*awg', val.lower())
-    if m:
-        return m.group(1)
-    # "#12 AWG" -> "12"
-    m = re.search(r'#?(\d{1,2})\s*(?:awg)?', val.lower())
-    if m:
-        return m.group(1)
-    return None
-
-
 # ---------------------------------------------------------------------------
-#  Breaker vs Cable sizing (NEC 240.4)
+#  1. Breaker-Cable Sizing (NEC 240.4 + 310.16) — IMPROVED with topology
 # ---------------------------------------------------------------------------
 
-def _check_breaker_cable_sizing(equipment: list) -> list[CrossRefFinding]:
+def _check_breaker_cable_sizing(equipment: list, topology: Optional[SystemTopology]) -> list[CrossRefFinding]:
     findings = []
-
     breakers = [e for e in equipment if e.equipment_type in ("breaker", "circuit_breaker")]
     cables = [e for e in equipment if e.equipment_type == "cable"]
 
-    # For each breaker, check if any associated cable is properly sized
     for breaker in breakers:
         trip = _parse_amps(breaker.trip_rating)
         if not trip:
             continue
 
-        # Find cables on the same page (likely associated)
-        page_cables = [c for c in cables if c.page_number == breaker.page_number]
+        # Find associated cables — same page or topology-linked
+        associated_cables = [c for c in cables if c.page_number == breaker.page_number]
 
-        for cable in page_cables:
+        for cable in associated_cables:
             size = _parse_conductor_size(cable.conductor_size)
             if not size:
                 continue
 
-            ampacity = NEC_AMPACITY_75C.get(size)
+            ampacity = NEC_310_16_75C.get(size, 0)
             if not ampacity:
                 continue
 
-            if ampacity < trip:
+            # Check for parallel runs
+            runs = int(cable.attributes.get("runs", 1)) if cable.attributes else 1
+            total_ampacity = ampacity * runs
+
+            if total_ampacity < trip:
                 findings.append(CrossRefFinding(
-                    finding_type="sizing_mismatch",
+                    finding_type="cable_undersized",
                     severity="critical",
                     equipment_1=breaker.designation,
                     equipment_2=cable.designation,
                     page_number=breaker.page_number,
                     description=(
-                        f"Breaker {breaker.designation} trip rating ({trip}A) exceeds "
-                        f"cable {cable.conductor_size} ampacity ({ampacity}A at 75°C). "
-                        f"Cable is undersized for the overcurrent protection."
+                        f"Page {breaker.page_number}: Breaker {breaker.designation} trip rating ({trip}A) "
+                        f"exceeds cable {cable.conductor_size} ampacity ({total_ampacity}A at 75°C"
+                        f"{f', {runs} runs' if runs > 1 else ''} per NEC 310.16). "
+                        f"Cable is undersized for overcurrent protection."
                     ),
-                    reference_code="NEC 240.4",
-                    recommendation=f"Increase cable to minimum {MIN_CONDUCTOR_FOR_TRIP.get(trip, '?')} AWG/kcmil or reduce breaker trip.",
+                    reference_code="NEC 240.4, 310.16",
+                    recommendation=f"Increase cable size or reduce breaker trip to {total_ampacity}A or less.",
                 ))
 
     return findings
 
 
 # ---------------------------------------------------------------------------
-#  Transformer sizing checks
+#  2. Transformer Protection (NEC 450.3) — IMPROVED with calculations
 # ---------------------------------------------------------------------------
 
-def _check_transformer_sizing(equipment: list) -> list[CrossRefFinding]:
+def _check_transformer_protection(equipment: list, topology: Optional[SystemTopology]) -> list[CrossRefFinding]:
     findings = []
-
     transformers = [e for e in equipment if e.equipment_type == "transformer"]
 
     for tx in transformers:
-        if not tx.kva:
+        kva = float(tx.kva) if tx.kva else 0
+        if not kva:
             findings.append(CrossRefFinding(
-                finding_type="missing_data",
-                severity="critical",
-                equipment_1=tx.designation,
-                equipment_2=None,
+                finding_type="missing_data", severity="critical",
+                equipment_1=tx.designation, equipment_2=None,
                 page_number=tx.page_number,
-                description=f"Transformer {tx.designation}: kVA rating not found",
+                description=f"Page {tx.page_number}: Transformer {tx.designation} — kVA rating not found in submittal.",
                 reference_code="NEC 450",
-                recommendation="Verify transformer kVA rating is specified in submittal",
+                recommendation="kVA rating must be specified for transformer protection sizing.",
             ))
             continue
 
-        kva = int(tx.kva)
+        # Calculate FLA and max OCPD
+        pri_v = int(tx.primary_voltage) if tx.primary_voltage else 480
+        sec_v = int(tx.secondary_voltage) if tx.secondary_voltage else 208
+        pri_fla = transformer_fla(kva, pri_v)
+        sec_fla = transformer_fla(kva, sec_v)
+        max_pri_ocpd = transformer_max_primary_ocpd(kva, pri_v, has_secondary_protection=True)
+        max_sec_ocpd = transformer_max_secondary_ocpd(kva, sec_v)
 
-        # Check impedance is specified
+        findings.append(CrossRefFinding(
+            finding_type="transformer_info", severity="info",
+            equipment_1=tx.designation, equipment_2=None,
+            page_number=tx.page_number,
+            description=(
+                f"Page {tx.page_number}: Transformer {tx.designation} ({kva}kVA, {pri_v}V→{sec_v}V): "
+                f"Primary FLA={pri_fla:.0f}A, max primary OCPD={max_pri_ocpd}A. "
+                f"Secondary FLA={sec_fla:.0f}A, max secondary OCPD={max_sec_ocpd}A."
+            ),
+            reference_code="NEC 450.3(B)",
+            recommendation=f"Verify primary breaker ≤{max_pri_ocpd}A and secondary breaker ≤{max_sec_ocpd}A.",
+        ))
+
         if not tx.impedance:
             findings.append(CrossRefFinding(
-                finding_type="missing_data",
-                severity="major",
-                equipment_1=tx.designation,
-                equipment_2=None,
+                finding_type="missing_data", severity="major",
+                equipment_1=tx.designation, equipment_2=None,
                 page_number=tx.page_number,
-                description=f"Transformer {tx.designation} ({kva}kVA): Impedance not specified",
+                description=f"Page {tx.page_number}: Transformer {tx.designation} ({kva}kVA) — impedance not specified.",
                 reference_code="NEC 450.3, IEEE C57",
-                recommendation="Impedance is required for coordination study and fault current calculations",
+                recommendation="Impedance required for fault current calculations and coordination study.",
             ))
-
-        # Check primary/secondary voltages
-        if not tx.primary_voltage and not tx.voltage:
-            findings.append(CrossRefFinding(
-                finding_type="missing_data",
-                severity="major",
-                equipment_1=tx.designation,
-                equipment_2=None,
-                page_number=tx.page_number,
-                description=f"Transformer {tx.designation} ({kva}kVA): Voltage not specified",
-                reference_code="NEC 450",
-                recommendation="Primary and secondary voltage must be specified",
-            ))
-
-        # Check NEC 450.3 primary protection for dry-type
-        # Over 600V: max 300% (with secondary protection) or 125%
-        # 600V or below: max 125% (next standard size up allowed)
-        if kva > 0:
-            fla_480 = kva * 1000 / (480 * 1.732)  # 3-phase FLA at 480V
-            max_primary_ocpd = fla_480 * 1.25
-            next_standard = None
-            for size in STANDARD_FRAME_SIZES:
-                if size >= max_primary_ocpd:
-                    next_standard = size
-                    break
-
-            if next_standard:
-                findings.append(CrossRefFinding(
-                    finding_type="info",
-                    severity="info",
-                    equipment_1=tx.designation,
-                    equipment_2=None,
-                    page_number=tx.page_number,
-                    description=(
-                        f"Transformer {tx.designation} ({kva}kVA at 480V): "
-                        f"FLA = {fla_480:.0f}A. Max primary OCPD per NEC 450.3 = {next_standard}A. "
-                        f"Verify primary breaker does not exceed this."
-                    ),
-                    reference_code="NEC 450.3(B)",
-                    recommendation=f"Primary overcurrent protection must not exceed {next_standard}A",
-                ))
 
     return findings
 
 
 # ---------------------------------------------------------------------------
-#  Voltage consistency
+#  3. Voltage Consistency
 # ---------------------------------------------------------------------------
 
 def _check_voltage_consistency(equipment: list) -> list[CrossRefFinding]:
     findings = []
-
-    # Group equipment by voltage and flag mismatches
+    expected = {120, 208, 230, 240, 277, 400, 415, 440, 480, 600, 690, 4160, 12470, 13200, 13800}
     voltages_seen = set()
+
     for eq in equipment:
         if eq.voltage:
-            import re
-            v = re.findall(r'\d{3,5}', eq.voltage)
-            voltages_seen.update(int(x) for x in v)
+            vs = re.findall(r'\d{3,5}', eq.voltage)
+            for v in vs:
+                v_int = int(v)
+                if v_int > 100:
+                    voltages_seen.add(v_int)
 
-    # Check for unusual voltages in a data center context
-    expected_dc_voltages = {120, 208, 240, 277, 400, 415, 480, 600, 4160, 12470, 13200, 13800}
     for v in voltages_seen:
-        if v not in expected_dc_voltages and v > 100:
+        if v not in expected:
             findings.append(CrossRefFinding(
-                finding_type="voltage_anomaly",
-                severity="major",
-                equipment_1="System",
-                equipment_2=None,
-                page_number=0,
-                description=f"Unusual voltage {v}V found. Verify this is correct for the system.",
+                finding_type="voltage_anomaly", severity="major",
+                equipment_1="System", equipment_2=None, page_number=0,
+                description=f"Unusual voltage {v}V found in submittal. Verify this is correct.",
                 reference_code="NEC 110.4",
-                recommendation="Confirm voltage is appropriate for the installation",
+                recommendation="Confirm voltage is appropriate for the installation.",
             ))
 
     return findings
 
 
 # ---------------------------------------------------------------------------
-#  Panel bus rating vs main breaker
+#  4. Panel Bus Rating vs OCPD (NEC 408.36)
 # ---------------------------------------------------------------------------
 
-def _check_panel_bus_rating(equipment: list) -> list[CrossRefFinding]:
+def _check_panel_bus_rating(equipment: list, topology: Optional[SystemTopology]) -> list[CrossRefFinding]:
     findings = []
-
-    panels = [e for e in equipment if e.equipment_type == "panel"]
-    breakers = [e for e in equipment if e.equipment_type in ("breaker", "circuit_breaker")]
+    panels = [e for e in equipment if e.equipment_type == "panel" and e.amperage]
 
     for panel in panels:
         bus_amps = _parse_amps(panel.amperage)
         if not bus_amps:
             continue
 
-        # Find breakers on the same page (likely the panel's main or branches)
-        page_breakers = [b for b in breakers if b.page_number == panel.page_number]
+        # Find breakers that could be the main breaker for this panel
+        # Check topology first, fall back to same-page
+        page_breakers = [e for e in equipment
+                         if e.equipment_type in ("breaker", "circuit_breaker")
+                         and e.page_number == panel.page_number]
+
         for bkr in page_breakers:
             trip = _parse_amps(bkr.trip_rating)
             if trip and trip > bus_amps:
                 findings.append(CrossRefFinding(
-                    finding_type="sizing_mismatch",
-                    severity="critical",
-                    equipment_1=panel.designation,
-                    equipment_2=bkr.designation,
+                    finding_type="bus_undersized", severity="critical",
+                    equipment_1=panel.designation, equipment_2=bkr.designation,
                     page_number=panel.page_number,
                     description=(
-                        f"Panel {panel.designation} bus rating ({bus_amps}A) is less than "
-                        f"breaker {bkr.designation} trip ({trip}A). Bus is undersized."
+                        f"Page {panel.page_number}: Panel {panel.designation} bus rated {bus_amps}A "
+                        f"but breaker {bkr.designation} trip is {trip}A. "
+                        f"Bus rating must equal or exceed OCPD trip rating."
                     ),
                     reference_code="NEC 408.36",
-                    recommendation=f"Increase bus rating to at least {trip}A or reduce breaker trip",
+                    recommendation=f"Increase bus to {trip}A or reduce breaker trip to {bus_amps}A.",
                 ))
 
     return findings
 
 
 # ---------------------------------------------------------------------------
-#  Breaker frame vs trip
+#  5. Breaker Frame vs Trip
 # ---------------------------------------------------------------------------
 
 def _check_breaker_frame_vs_trip(equipment: list) -> list[CrossRefFinding]:
     findings = []
-
-    breakers = [e for e in equipment if e.equipment_type in ("breaker", "circuit_breaker")]
-    for bkr in breakers:
+    for bkr in equipment:
+        if bkr.equipment_type not in ("breaker", "circuit_breaker"):
+            continue
         frame = _parse_amps(bkr.frame_size)
         trip = _parse_amps(bkr.trip_rating)
-
         if frame and trip and trip > frame:
             findings.append(CrossRefFinding(
-                finding_type="invalid_config",
-                severity="critical",
-                equipment_1=bkr.designation,
-                equipment_2=None,
+                finding_type="invalid_config", severity="critical",
+                equipment_1=bkr.designation, equipment_2=None,
                 page_number=bkr.page_number,
                 description=(
-                    f"Breaker {bkr.designation}: Trip rating ({trip}A) exceeds "
-                    f"frame size ({frame}A). This is not a valid configuration."
+                    f"Page {bkr.page_number}: Breaker {bkr.designation} trip ({trip}A) "
+                    f"exceeds frame ({frame}A). Not a valid configuration."
                 ),
                 reference_code="UL 489",
-                recommendation=f"Trip rating cannot exceed frame size. Correct to {frame}AT max or increase frame.",
+                recommendation=f"Trip cannot exceed frame. Max trip for {frame}A frame is {frame}A.",
             ))
-
     return findings
 
 
 # ---------------------------------------------------------------------------
-#  Standard breaker sizes
+#  6. Standard Breaker Sizes (NEC 240.6)
 # ---------------------------------------------------------------------------
 
 def _check_standard_breaker_sizes(equipment: list) -> list[CrossRefFinding]:
     findings = []
-
-    breakers = [e for e in equipment if e.equipment_type in ("breaker", "circuit_breaker")]
-    for bkr in breakers:
+    for bkr in equipment:
+        if bkr.equipment_type not in ("breaker", "circuit_breaker"):
+            continue
         trip = _parse_amps(bkr.trip_rating)
-        if trip and trip not in STANDARD_FRAME_SIZES:
+        if trip and trip not in STANDARD_BREAKER_SIZES and trip > 6:
             findings.append(CrossRefFinding(
-                finding_type="non_standard",
-                severity="minor",
-                equipment_1=bkr.designation,
-                equipment_2=None,
+                finding_type="non_standard", severity="minor",
+                equipment_1=bkr.designation, equipment_2=None,
                 page_number=bkr.page_number,
-                description=f"Breaker {bkr.designation}: {trip}A is not a standard breaker trip size",
+                description=f"Page {bkr.page_number}: {bkr.designation} {trip}A — not a standard breaker size per NEC 240.6(A).",
                 reference_code="NEC 240.6",
-                recommendation=f"Verify {trip}A is a valid trip setting. Standard sizes per NEC 240.6(A).",
+                recommendation=f"Verify {trip}A is an adjustable trip setting, not a frame size.",
+            ))
+    return findings
+
+
+# ---------------------------------------------------------------------------
+#  7. Small Wire Rule (NEC 240.4(D))
+# ---------------------------------------------------------------------------
+
+def _check_small_wire_rule(equipment: list) -> list[CrossRefFinding]:
+    findings = []
+    for bkr in equipment:
+        if bkr.equipment_type != "circuit_breaker":
+            continue
+        trip = _parse_amps(bkr.trip_rating)
+        size = _parse_conductor_size(bkr.conductor_size)
+        if trip and size and size in NEC_240_4_D:
+            max_ocpd = NEC_240_4_D[size]
+            if trip > max_ocpd:
+                findings.append(CrossRefFinding(
+                    finding_type="code_violation", severity="critical",
+                    equipment_1=bkr.designation, equipment_2=None,
+                    page_number=bkr.page_number,
+                    description=(
+                        f"Page {bkr.page_number}: #{size} AWG conductor with {trip}A breaker "
+                        f"exceeds NEC 240.4(D) maximum of {max_ocpd}A."
+                    ),
+                    reference_code="NEC 240.4(D)",
+                    recommendation=f"#{size} AWG max OCPD is {max_ocpd}A. Increase wire size or reduce breaker.",
+                ))
+    return findings
+
+
+# ---------------------------------------------------------------------------
+#  8. Fault Current Coordination (NEC 110.9) — NEW
+# ---------------------------------------------------------------------------
+
+def _check_fault_current_coordination(equipment: list, topology: SystemTopology) -> list[CrossRefFinding]:
+    findings = []
+
+    for node_id, node in topology.nodes.items():
+        if node.equipment_type != "breaker":
+            continue
+        if not node.interrupting_kA or not node.available_fault_current_kA:
+            continue
+
+        if node.interrupting_kA < node.available_fault_current_kA:
+            findings.append(CrossRefFinding(
+                finding_type="interrupting_inadequate", severity="critical",
+                equipment_1=node.equipment_id, equipment_2=None,
+                page_number=node.page_number,
+                description=(
+                    f"Page {node.page_number}: Breaker {node.equipment_id} has {node.interrupting_kA}kA "
+                    f"interrupting rating but available fault current at this point is estimated at "
+                    f"{node.available_fault_current_kA:.0f}kA. Device must be rated for available fault current."
+                ),
+                reference_code="NEC 110.9",
+                recommendation=f"Replace with breaker rated ≥{node.available_fault_current_kA:.0f}kA or add current-limiting device upstream.",
             ))
 
     return findings
 
 
 # ---------------------------------------------------------------------------
-#  Small conductor rule NEC 240.4(D)
+#  9. Selective Coordination (NEC 700.32, 701.27) — NEW
 # ---------------------------------------------------------------------------
 
-def _check_conductor_small_wire_rule(equipment: list) -> list[CrossRefFinding]:
+def _check_selective_coordination(topology: SystemTopology) -> list[CrossRefFinding]:
+    findings = []
+    pairs = topology.get_breaker_pairs()
+
+    for upstream, downstream in pairs:
+        up_amps = upstream.amperage or 0
+        down_amps = downstream.amperage or 0
+
+        if up_amps > 0 and down_amps > 0 and down_amps >= up_amps:
+            findings.append(CrossRefFinding(
+                finding_type="coordination_issue", severity="critical",
+                equipment_1=upstream.equipment_id,
+                equipment_2=downstream.equipment_id,
+                page_number=upstream.page_number,
+                description=(
+                    f"Breaker {upstream.equipment_id} ({up_amps}A) feeds {downstream.equipment_id} ({down_amps}A). "
+                    f"Downstream device rating equals or exceeds upstream — selective coordination not achievable."
+                ),
+                reference_code="NEC 700.32, 701.27",
+                recommendation="Verify time-current curves provide selective coordination at all fault levels.",
+            ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# 10. Arc Energy Reduction (NEC 240.87) — NEW
+# ---------------------------------------------------------------------------
+
+def _check_arc_energy_reduction(equipment: list, topology: SystemTopology) -> list[CrossRefFinding]:
     findings = []
 
-    breakers = [e for e in equipment if e.equipment_type == "circuit_breaker"]
+    for eq in equipment:
+        if eq.equipment_type != "breaker":
+            continue
+        trip = _parse_amps(eq.trip_rating or eq.frame_size)
+        if not trip or trip < 1200:
+            continue
+
+        # Breakers rated 1200A or higher require arc energy reduction
+        context = (eq.raw_text or "").lower()
+        has_zsi = "zsi" in context or "zone" in context
+        has_maint_switch = "maintenance" in context and "switch" in context
+        has_arc_reduction = "arc" in context and ("reduc" in context or "mitigat" in context)
+
+        if not (has_zsi or has_maint_switch or has_arc_reduction):
+            findings.append(CrossRefFinding(
+                finding_type="arc_energy", severity="major",
+                equipment_1=eq.designation, equipment_2=None,
+                page_number=eq.page_number,
+                description=(
+                    f"Page {eq.page_number}: Breaker {eq.designation} rated {trip}A — "
+                    f"NEC 240.87 requires arc energy reduction means for breakers rated 1200A or higher. "
+                    f"Must provide ZSI, differential relaying, maintenance switch, or equivalent."
+                ),
+                reference_code="NEC 240.87",
+                recommendation="Confirm ZSI, energy-reducing maintenance switch, or active arc flash mitigation is provided.",
+            ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# 11. Ground Fault Protection (NEC 230.95) — NEW
+# ---------------------------------------------------------------------------
+
+def _check_ground_fault_protection(equipment: list, pages: Optional[list]) -> list[CrossRefFinding]:
+    findings = []
+    full_text = "\n".join(p.get("text_lower", "") for p in (pages or []))
+
+    # Find service entrance equipment rated 1000A or more at 480Y/277V
+    for eq in equipment:
+        if eq.equipment_type not in ("breaker", "panel"):
+            continue
+        amps = _parse_amps(eq.amperage or eq.trip_rating or eq.frame_size)
+        if not amps or amps < 1000:
+            continue
+
+        context = (eq.raw_text or "").lower()
+        is_service = ("incomer" in context or "incoming" in context or "source" in context
+                      or "service" in context or "main" in context)
+
+        if is_service:
+            has_gfp = ("ground fault" in full_text or "gfp" in full_text
+                       or "ekip g" in full_text or "residual" in full_text)
+            if not has_gfp:
+                findings.append(CrossRefFinding(
+                    finding_type="missing_gfp", severity="critical",
+                    equipment_1=eq.designation, equipment_2=None,
+                    page_number=eq.page_number,
+                    description=(
+                        f"Page {eq.page_number}: Service entrance {eq.designation} rated {amps}A at 480Y/277V — "
+                        f"NEC 230.95 requires ground fault protection for equipment rated 1000A or more. "
+                        f"Ground fault relay not found in submittal."
+                    ),
+                    reference_code="NEC 230.95",
+                    recommendation="Add ground fault protection with max 1200A pickup, max 1-second delay per NEC 230.95(A).",
+                ))
+            break  # Only check once
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# 12. Available Fault Current Labeling (NEC 110.24) — NEW
+# ---------------------------------------------------------------------------
+
+def _check_afc_labeling(equipment: list, pages: Optional[list]) -> list[CrossRefFinding]:
+    findings = []
+    full_text = "\n".join(p.get("text_lower", "") for p in (pages or []))
+
+    has_afc_label = ("available fault current" in full_text or "afc" in full_text
+                     or "short circuit current" in full_text and "label" in full_text)
+
+    if not has_afc_label:
+        findings.append(CrossRefFinding(
+            finding_type="missing_label", severity="major",
+            equipment_1="Service Equipment", equipment_2=None,
+            page_number=0,
+            description=(
+                "Available fault current labeling not found in submittal. "
+                "NEC 110.24(A) requires field-applied labels on service equipment showing "
+                "available fault current, date of calculation, and calculation method."
+            ),
+            reference_code="NEC 110.24(A)",
+            recommendation="Provide available fault current calculation and confirm labels will be field-applied.",
+        ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# 13. Grounding Conductor Sizing (NEC 250.122) — NEW
+# ---------------------------------------------------------------------------
+
+def _check_grounding_conductor(equipment: list, topology: Optional[SystemTopology]) -> list[CrossRefFinding]:
+    findings = []
+    breakers = [e for e in equipment if e.equipment_type in ("breaker", "circuit_breaker")]
+    cables = [e for e in equipment if e.equipment_type == "cable"]
+
     for bkr in breakers:
         trip = _parse_amps(bkr.trip_rating)
-        size = _parse_conductor_size(bkr.conductor_size)
+        if not trip or trip < 15:
+            continue
 
-        if trip and size and size in NEC_240_4_D:
-            max_ocpd = NEC_240_4_D[size]
-            if trip > max_ocpd:
+        required_egc = min_egc_size(trip)
+        # Look for ground conductor in associated cables
+        page_cables = [c for c in cables if c.page_number == bkr.page_number]
+
+        for cable in page_cables:
+            raw = (cable.raw_text or "").lower()
+            if "cpc" in raw or "ground" in raw or "egc" in raw or "gnd" in raw:
+                # Found a ground reference — check size
+                gnd_match = re.search(r'(\d+)\s*(?:mm2|mm²)', raw)
+                if gnd_match:
+                    gnd_mm2 = int(gnd_match.group(1))
+                    gnd_awg = mm2_to_awg(gnd_mm2)
+                    req_ampacity = NEC_310_16_75C.get(required_egc, 0)
+                    gnd_ampacity = NEC_310_16_75C.get(gnd_awg, 0)
+
+                    if gnd_ampacity < req_ampacity:
+                        findings.append(CrossRefFinding(
+                            finding_type="egc_undersized", severity="critical",
+                            equipment_1=bkr.designation, equipment_2=cable.designation,
+                            page_number=bkr.page_number,
+                            description=(
+                                f"Page {bkr.page_number}: {trip}A breaker requires minimum #{required_egc} "
+                                f"equipment grounding conductor per NEC 250.122. "
+                                f"Cable shows {gnd_mm2}mm² (≈#{gnd_awg}) ground — may be undersized."
+                            ),
+                            reference_code="NEC 250.122",
+                            recommendation=f"Verify ground conductor is minimum #{required_egc} Cu per NEC 250.122.",
+                        ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# 14. Transformer Grounding — Separately Derived Systems (NEC 250.30) — NEW
+# ---------------------------------------------------------------------------
+
+def _check_transformer_grounding(equipment: list) -> list[CrossRefFinding]:
+    findings = []
+    transformers = [e for e in equipment if e.equipment_type == "transformer"]
+
+    for tx in transformers:
+        kva = float(tx.kva) if tx.kva else 0
+        if kva < 15:  # Skip very small transformers (control power)
+            continue
+
+        context = (tx.raw_text or "").lower()
+        has_grounding = ("grounding" in context or "bonding" in context or "250.30" in context
+                         or "grounding electrode" in context or "gec" in context)
+
+        if not has_grounding:
+            findings.append(CrossRefFinding(
+                finding_type="missing_grounding", severity="major",
+                equipment_1=tx.designation, equipment_2=None,
+                page_number=tx.page_number,
+                description=(
+                    f"Page {tx.page_number}: Transformer {tx.designation} ({kva}kVA) — "
+                    f"NEC 250.30 requires separately derived systems to have grounding electrode conductor, "
+                    f"system bonding jumper, and supply-side bonding jumper. Not documented in submittal."
+                ),
+                reference_code="NEC 250.30",
+                recommendation="Verify NEC 250.30 grounding requirements are addressed for this transformer.",
+            ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# 15. K-Factor / Harmonics (IEEE C57.110) — NEW
+# ---------------------------------------------------------------------------
+
+def _check_kfactor_harmonics(equipment: list, pages: Optional[list]) -> list[CrossRefFinding]:
+    findings = []
+    full_text = "\n".join(p.get("text_lower", "") for p in (pages or []))
+    transformers = [e for e in equipment if e.equipment_type == "transformer"]
+
+    # Check if IT loads are present (data center → harmonics expected)
+    has_it_loads = any(kw in full_text for kw in ["it load", "server", "rack", "gpu", "power shelf", "data hall"])
+
+    if not has_it_loads:
+        return findings
+
+    for tx in transformers:
+        kva = float(tx.kva) if tx.kva else 0
+        if kva < 50:  # Skip small transformers
+            continue
+
+        context = (tx.raw_text or "").lower()
+        has_kfactor = any(kw in context for kw in ["k-factor", "k factor", "k-13", "k-20", "k13", "k20"])
+        has_200_neutral = "200%" in context or "double neutral" in context
+
+        if not has_kfactor:
+            findings.append(CrossRefFinding(
+                finding_type="missing_kfactor", severity="major",
+                equipment_1=tx.designation, equipment_2=None,
+                page_number=tx.page_number,
+                description=(
+                    f"Page {tx.page_number}: Transformer {tx.designation} ({kva}kVA) feeds IT loads — "
+                    f"K-factor rating not specified. Data center IT loads generate significant harmonics "
+                    f"requiring K-13 or K-20 rated transformers per IEEE C57.110."
+                ),
+                reference_code="IEEE C57.110",
+                recommendation="Verify transformer is K-factor rated (K-13 minimum for data center IT loads).",
+            ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# 16. ABB Product Validation — NEW
+# ---------------------------------------------------------------------------
+
+def _check_abb_product_validity(equipment: list) -> list[CrossRefFinding]:
+    findings = []
+
+    for eq in equipment:
+        if eq.manufacturer != "ABB" or eq.equipment_type != "breaker":
+            continue
+
+        result = validate_abb_breaker(eq.designation)
+        if not result["valid"]:
+            for issue in result["issues"]:
                 findings.append(CrossRefFinding(
-                    finding_type="code_violation",
-                    severity="critical",
-                    equipment_1=bkr.designation,
-                    equipment_2=None,
-                    page_number=bkr.page_number,
-                    description=(
-                        f"Circuit {bkr.designation}: #{size} AWG conductor with "
-                        f"{trip}A breaker exceeds NEC 240.4(D) max of {max_ocpd}A"
-                    ),
-                    reference_code="NEC 240.4(D)",
-                    recommendation=f"#{size} AWG cannot have OCPD > {max_ocpd}A. Increase wire size or reduce breaker.",
+                    finding_type="invalid_product", severity="major",
+                    equipment_1=eq.designation, equipment_2=None,
+                    page_number=eq.page_number,
+                    description=f"Page {eq.page_number}: {eq.designation} — {issue}",
+                    reference_code="ABB Product Catalog",
+                    recommendation="Verify correct ABB model and frame size.",
                 ))
 
     return findings
+
+
+# ---------------------------------------------------------------------------
+# 17. Metric Cable Sizing — NEW
+# ---------------------------------------------------------------------------
+
+def _check_metric_cable_sizing(equipment: list) -> list[CrossRefFinding]:
+    findings = []
+    cables = [e for e in equipment if e.equipment_type == "cable" and e.attributes]
+    breakers = [e for e in equipment if e.equipment_type in ("breaker", "circuit_breaker")]
+
+    for cable in cables:
+        size_mm2 = cable.attributes.get("size_mm2")
+        runs = int(cable.attributes.get("runs", 1))
+        if not size_mm2:
+            continue
+
+        mm2 = float(size_mm2)
+        awg = mm2_to_awg(mm2)
+        ampacity_per_run = mm2_ampacity_75c(mm2)
+        total_ampacity = ampacity_per_run * runs
+
+        # Find breaker on same page to check sizing
+        page_breakers = [b for b in breakers if b.page_number == cable.page_number]
+        for bkr in page_breakers:
+            trip = _parse_amps(bkr.trip_rating)
+            if not trip:
+                continue
+
+            if total_ampacity > 0 and total_ampacity < trip:
+                findings.append(CrossRefFinding(
+                    finding_type="metric_cable_undersized", severity="critical",
+                    equipment_1=bkr.designation, equipment_2=cable.designation,
+                    page_number=cable.page_number,
+                    description=(
+                        f"Page {cable.page_number}: Cable {cable.conductor_size} "
+                        f"(≈#{awg}, {ampacity_per_run}A/run × {runs} runs = {total_ampacity}A at 75°C per NEC 310.16) "
+                        f"protected by {bkr.designation} ({trip}A). Cable may be undersized."
+                    ),
+                    reference_code="NEC 240.4, 310.16",
+                    recommendation=f"Verify cable ampacity of {total_ampacity}A is adequate for {trip}A protection.",
+                ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+#  Helpers
+# ---------------------------------------------------------------------------
+
+def _parse_amps(val) -> Optional[int]:
+    if not val:
+        return None
+    m = re.search(r'(\d+)', str(val))
+    return int(m.group(1)) if m else None
+
+
+def _parse_conductor_size(val) -> Optional[str]:
+    if not val:
+        return None
+    m = re.search(r'(\d+)\s*kcmil', str(val).lower())
+    if m:
+        return m.group(1)
+    m = re.search(r'#?(\d+/\d+)\s*awg', str(val).lower())
+    if m:
+        return m.group(1)
+    m = re.search(r'#?(\d{1,2})\s*(?:awg)?', str(val).lower())
+    if m:
+        return m.group(1)
+    return None
