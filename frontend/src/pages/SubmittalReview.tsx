@@ -38,6 +38,7 @@ export default function SubmittalReview() {
   const [reviewFilter, setReviewFilter] = useState<'all' | 'fail' | 'pass' | 'review'>('all');
   const [commentSort, setCommentSort] = useState<'severity' | 'status' | 'date'>('severity');
   const [expandedResult, setExpandedResult] = useState<number | null>(null);
+  const [pdfPage, setPdfPage] = useState<number>(1);
   const [emailForm, setEmailForm] = useState({ email_type: 'clarification', recipients: '', additional_notes: '' });
   const [selectedEmail, setSelectedEmail] = useState<GeneratedEmail | null>(null);
 
@@ -401,31 +402,37 @@ export default function SubmittalReview() {
                             </div>
                           )}
 
-                          {/* Page link — jumps to marked-up PDF with correct offset */}
+                          {/* Page link — opens marked-up PDF in new tab at correct page */}
                           {pageNum && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (hasAnnotated) {
-                                  setViewingMarkup(true);
-                                }
-                                setActiveTab('pdf');
-                                setTimeout(() => {
-                                  const iframe = document.querySelector('iframe[title]') as HTMLIFrameElement;
-                                  if (iframe) {
-                                    // Offset page number by summary pages in marked-up PDF
-                                    const adjustedPage = hasAnnotated ? pageNum + summaryPageCount : pageNum;
-                                    const baseUrl = hasAnnotated
-                                      ? getAnnotatedPdfUrl(Number(submittalId))
-                                      : getSubmittalPdfUrl(Number(submittalId));
-                                    iframe.src = baseUrl + '#page=' + adjustedPage;
-                                  }
-                                }, 200);
-                              }}
-                              className="text-xs text-blue-600 hover:underline font-medium"
-                            >
-                              View Page {pageNum} in PDF →
-                            </button>
+                            <div className="flex gap-3">
+                              <a
+                                href={(() => {
+                                  const adjustedPage = hasAnnotated ? pageNum + summaryPageCount : pageNum;
+                                  const baseUrl = hasAnnotated
+                                    ? getAnnotatedPdfUrl(Number(submittalId))
+                                    : getSubmittalPdfUrl(Number(submittalId));
+                                  return baseUrl + '#page=' + adjustedPage;
+                                })()}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-xs text-blue-600 hover:underline font-medium"
+                              >
+                                Open Page {pageNum} in New Tab →
+                              </a>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const adjustedPage = hasAnnotated ? pageNum + summaryPageCount : pageNum;
+                                  setPdfPage(adjustedPage);
+                                  if (hasAnnotated) setViewingMarkup(true);
+                                  setActiveTab('pdf');
+                                }}
+                                className="text-xs text-purple-600 hover:underline font-medium"
+                              >
+                                View in PDF Tab →
+                              </button>
+                            </div>
                           )}
                         </div>
                       )}
@@ -624,6 +631,30 @@ export default function SubmittalReview() {
                 Marked Up PDF
               </button>
             </div>
+            {/* Page navigation */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { if (pdfPage > 1) setPdfPage(pdfPage - 1); }}
+                className="px-2 py-1 bg-gray-200 rounded text-sm hover:bg-gray-300"
+              >
+                ←
+              </button>
+              <span className="text-xs text-gray-500">Page</span>
+              <input
+                type="number"
+                value={pdfPage}
+                onChange={(e) => setPdfPage(Math.max(1, parseInt(e.target.value) || 1))}
+                className="w-16 border rounded px-2 py-1 text-sm text-center"
+                min={1}
+              />
+              <button
+                onClick={() => setPdfPage(pdfPage + 1)}
+                className="px-2 py-1 bg-gray-200 rounded text-sm hover:bg-gray-300"
+              >
+                →
+              </button>
+            </div>
+
             <div className="flex gap-2">
               {viewingMarkup && hasAnnotated && (
                 <a
@@ -644,7 +675,8 @@ export default function SubmittalReview() {
             </div>
           </div>
           <iframe
-            src={viewingMarkup && hasAnnotated ? getAnnotatedPdfUrl(Number(submittalId)) : getSubmittalPdfUrl(Number(submittalId))}
+            key={`pdf-${viewingMarkup}-${pdfPage}`}
+            src={`${viewingMarkup && hasAnnotated ? getAnnotatedPdfUrl(Number(submittalId)) : getSubmittalPdfUrl(Number(submittalId))}#page=${pdfPage}`}
             className="w-full rounded-b-lg"
             style={{ height: '80vh' }}
             title={viewingMarkup ? 'Marked Up PDF' : 'Submittal PDF'}
