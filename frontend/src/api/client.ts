@@ -54,6 +54,9 @@ export const getReportUrl = (submittalId: number) => `/api/reviews/${submittalId
 export const compareRevision = (submittalId: number, formData: FormData) =>
   api.post(`/reviews/${submittalId}/compare-revision`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
 
+// --- NEC Commentary ---
+export const getNecCommentary = (codeRef: string) => api.get(`/reviews/nec-commentary/${encodeURIComponent(codeRef)}`);
+
 // --- Vision ---
 export const startVisionAnalysis = (submittalId: number) => api.post(`/reviews/${submittalId}/vision-analyze`);
 export const getVisionStatus = (submittalId: number) => api.get(`/reviews/${submittalId}/vision-status`);
