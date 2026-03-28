@@ -18,7 +18,7 @@
     "wait-on": "^8.0.0"
   },
   "build": {
-    "appId": "com.armada.arclight",
+    "appId": "com.positron.arclight",
     "productName": "ArcLight",
     "directories": {
       "output": "../dist/electron"

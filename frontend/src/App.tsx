@@ -87,7 +87,7 @@ export default function App() {
       {/* Footer */}
       <footer className="border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-auto">
         <div className="max-w-[1400px] mx-auto px-6 py-4 flex items-center justify-between text-xs text-slate-400 dark:text-slate-500">
-          <span>ArcLight by Armada Systems</span>
+          <span>ArcLight by POSITRON</span>
           <span>NEC 2023 / NFPA 70 / IEEE / UL</span>
         </div>
       </footer>
