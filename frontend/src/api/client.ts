@@ -77,6 +77,18 @@ export const startVisionAnalysis = (submittalId: number) => api.post(`/reviews/$
 export const getVisionStatus = (submittalId: number) => api.get(`/reviews/${submittalId}/vision-status`);
 export const checkVisionAvailable = () => api.get('/reviews/vision-available');
 
+// --- Settings ---
+export const getEmailSettings = () => api.get('/settings/email');
+export const saveEmailSettings = (data: { email: string; password: string; host: string; port: number; display_name?: string }) =>
+  api.post('/settings/email/save', data);
+export const deleteEmailSettings = () => api.delete('/settings/email');
+export const detectSmtpProvider = (email: string) =>
+  api.post('/settings/email/detect', { email });
+export const testEmailConnection = (data: { email: string; password: string; host: string; port: number }) =>
+  api.post('/settings/email/test', data);
+export const sendGeneratedEmail = (emailId: number, data: { to: string; cc?: string }) =>
+  api.post(`/emails/${emailId}/send`, data);
+
 // --- Dashboard ---
 export const getDashboard = () => api.get('/dashboard');
 
