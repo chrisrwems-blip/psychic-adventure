@@ -267,7 +267,8 @@ def _extract_transformers(text: str, text_lower: str, page: int) -> list[Extract
 
     # "Sn=27.78[kVA]" (ABB style in SLDs) — but only if it's actually a transformer
     # Chillers, pumps, racks, fans also have Sn= for their apparent power DRAW, not transformer rating
-    LOAD_KEYWORDS = ["chiller", "pump", "motor", "fan", "rack", "shelf", "coil", "compressor"]
+    LOAD_KEYWORDS = ["chiller", "pump", "motor", "fan", "rack", "shelf", "coil", "compressor",
+                      "power shelf", "powershelf", "supply", "load", "heater", "light", "recircpump"]
 
     for match in re.finditer(r'[Ss]n\s*=\s*(\d+\.?\d*)\s*\[?kva\]?', text_lower):
         kva_val = match.group(1)
