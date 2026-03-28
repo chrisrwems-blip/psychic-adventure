@@ -324,12 +324,16 @@ def run_full_review(db: Session, submittal_id: int, has_spec: bool = False) -> d
             db.add(comment)
 
     for xref in cross_ref_findings:
+        # Prepend page number as structured tag for frontend parsing
+        xref_details = f"{xref.description} | Recommendation: {xref.recommendation}"
+        if xref.page_number and xref.page_number > 0:
+            xref_details = f"[PAGE:{xref.page_number}] {xref_details}"
         result = ReviewResult(
             submittal_id=submittal_id,
             check_name=xref.description[:255],
             check_category=f"Cross-Reference: {xref.finding_type}",
             passed=0 if xref.severity in ("critical", "major") else -1,
-            details=f"{xref.description} | Recommendation: {xref.recommendation}",
+            details=xref_details,
             reference_standard=xref.reference_code,
         )
         db.add(result)

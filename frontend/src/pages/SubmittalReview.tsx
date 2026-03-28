@@ -557,14 +557,21 @@ export default function SubmittalReview() {
                   const status = RESULT_ICONS[r.passed] || RESULT_ICONS[-1];
                   const isExpanded = expandedResult === r.id;
 
-                  // Parse details: split on " | Recommendation: " if present
-                  const detailParts = (r.details || '').split(' | Recommendation: ');
+                  // Parse details: strip [PAGE:X] tag, split on " | Recommendation: "
+                  const rawDetails = (r.details || '').replace(/\[PAGE:\d+\]\s*/g, '');
+                  const detailParts = rawDetails.split(' | Recommendation: ');
                   const mainDetail = detailParts[0];
                   const recommendation = detailParts[1] || null;
 
                   // Extract page number from detail text
-                  const pageMatch = mainDetail.match(/(?:Page|pg)\s*(\d+)/i);
-                  const pageNum = pageMatch ? parseInt(pageMatch[1]) : null;
+                  // Extract page number from structured [PAGE:X] tag (most reliable),
+                  // then fall back to "Page X" or "pg X" in the text
+                  const details = r.details || '';
+                  const structuredPage = details.match(/\[PAGE:(\d+)\]/);
+                  const textPage = mainDetail.match(/^(?:Page|pg)\s*(\d+)/i)
+                    || mainDetail.match(/(?:Page|pg)\s*(\d+)/i);
+                  const pageNum = structuredPage ? parseInt(structuredPage[1])
+                    : textPage ? parseInt(textPage[1]) : null;
 
                   return (
                     <div key={r.id}
