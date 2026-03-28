@@ -48,8 +48,9 @@ def create_production_app():
     step("Creating production app (backend serves frontend)")
 
     prod_app = os.path.join(BACKEND, "app", "production.py")
-    with open(prod_app, "w") as f:
-        f.write('''"""Production app — serves both API and frontend from a single process."""
+    with open(prod_app, "w", encoding="utf-8") as f:
+        f.write('# -*- coding: utf-8 -*-\n')
+        f.write('''"""Production app - serves both API and frontend from a single process."""
 import os
 from app.main import app
 from fastapi.staticfiles import StaticFiles
@@ -77,7 +78,7 @@ def create_launcher():
     step("Creating launcher script")
 
     launcher = os.path.join(BACKEND, "launcher.py")
-    with open(launcher, "w") as f:
+    with open(launcher, "w", encoding="utf-8") as f:
         f.write('''"""Single-exe launcher for DC Submittal Review Platform."""
 import os
 import sys
