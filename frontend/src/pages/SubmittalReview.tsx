@@ -9,10 +9,10 @@ import {
 import type { Submittal, ReviewResult, ReviewComment, GeneratedEmail } from '../types';
 
 const SEVERITY_COLORS: Record<string, string> = {
-  critical: 'bg-red-100 text-red-800 border-red-300',
-  major: 'bg-orange-100 text-orange-800 border-orange-300',
-  minor: 'bg-yellow-100 text-yellow-800 border-yellow-300',
-  info: 'bg-blue-100 text-blue-800 border-blue-300',
+  critical: 'bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-400 border-red-300 dark:border-red-800',
+  major: 'bg-orange-100 dark:bg-orange-900/40 text-orange-800 dark:text-orange-400 border-orange-300 dark:border-orange-800',
+  minor: 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-400 border-yellow-300 dark:border-yellow-800',
+  info: 'bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-400 border-blue-300 dark:border-blue-800',
 };
 
 // NEC code commentary — "why it matters" explanations
@@ -50,9 +50,9 @@ const NEC_COMMENTARY: Record<string, string> = {
 };
 
 const RESULT_ICONS: Record<number, { icon: string; color: string }> = {
-  1: { icon: 'PASS', color: 'text-green-600 bg-green-50' },
-  0: { icon: 'FAIL', color: 'text-red-600 bg-red-50' },
-  [-1]: { icon: 'REVIEW', color: 'text-yellow-600 bg-yellow-50' },
+  1: { icon: 'PASS', color: 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30' },
+  0: { icon: 'FAIL', color: 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30' },
+  [-1]: { icon: 'REVIEW', color: 'text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/30' },
 };
 
 export default function SubmittalReview() {
@@ -179,7 +179,7 @@ export default function SubmittalReview() {
     }
   };
 
-  if (!submittal) return <div className="text-center py-12 text-gray-400">Loading...</div>;
+  if (!submittal) return <div className="text-center py-12 text-gray-400 dark:text-slate-500">Loading...</div>;
 
   // Severity order for sorting
   const severityOrder: Record<string, number> = { critical: 0, major: 1, minor: 2, info: 3 };
@@ -248,12 +248,12 @@ export default function SubmittalReview() {
       <div className="flex items-center justify-between">
         <div>
           <Link to={`/project/${submittal.project_id}`} className="text-sm text-blue-600 hover:underline">&larr; Back to Project</Link>
-          <h2 className="text-2xl font-bold mt-1">{submittal.title}</h2>
-          <div className="text-sm text-gray-500 flex gap-4">
-            <span className="font-medium text-blue-600">{submittal.equipment_type.replace('_', ' ').toUpperCase()}</span>
+          <h2 className="text-2xl font-bold mt-1 dark:text-slate-100">{submittal.title}</h2>
+          <div className="text-sm text-gray-500 dark:text-slate-400 flex gap-4">
+            <span className="font-medium text-blue-600 dark:text-blue-400">{submittal.equipment_type.replace('_', ' ').toUpperCase()}</span>
             {submittal.manufacturer && <span>{submittal.manufacturer}</span>}
             {submittal.submittal_number && <span>#{submittal.submittal_number}</span>}
-            <span className="px-2 py-0.5 rounded-full text-xs bg-gray-200">{submittal.status}</span>
+            <span className="px-2 py-0.5 rounded-full text-xs bg-gray-200 dark:bg-slate-700 dark:text-slate-300">{submittal.status}</span>
           </div>
         </div>
         <div className="flex gap-2">
@@ -282,13 +282,13 @@ export default function SubmittalReview() {
 
       {/* Approval Stamp */}
       <details className="card">
-        <summary className="px-5 py-4 cursor-pointer font-semibold text-sm text-slate-700 hover:text-blue-600 flex items-center gap-2">
+        <summary className="px-5 py-4 cursor-pointer font-semibold text-sm text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 flex items-center gap-2">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.745 3.745 0 011.043 3.296A3.745 3.745 0 0121 12z" />
           </svg>
           Apply Review Stamp
         </summary>
-        <div className="px-5 pb-5 border-t border-slate-100">
+        <div className="px-5 pb-5 border-t border-slate-100 dark:border-slate-700">
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -307,7 +307,7 @@ export default function SubmittalReview() {
           >
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Disposition</label>
+                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Disposition</label>
                 <select name="disposition" className="select w-full">
                   <option value="approved">Approved</option>
                   <option value="approved_as_noted">Approved as Noted</option>
@@ -316,7 +316,7 @@ export default function SubmittalReview() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Reviewer Name</label>
+                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Reviewer Name</label>
                 <input name="reviewer_name" type="text" defaultValue="Engineer of Record" className="input w-full" />
               </div>
             </div>
@@ -329,13 +329,13 @@ export default function SubmittalReview() {
 
       {/* Revision Comparison */}
       <details className="card">
-        <summary className="px-5 py-4 cursor-pointer font-semibold text-sm text-slate-700 hover:text-blue-600 flex items-center gap-2">
+        <summary className="px-5 py-4 cursor-pointer font-semibold text-sm text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 flex items-center gap-2">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
           </svg>
           Compare with Revision (upload Rev B)
         </summary>
-        <div className="px-5 pb-5 border-t border-slate-100">
+        <div className="px-5 pb-5 border-t border-slate-100 dark:border-slate-700">
           <form onSubmit={async (e) => {
             e.preventDefault();
             const input = (e.currentTarget.querySelector('input[type=file]') as HTMLInputElement);
@@ -371,16 +371,16 @@ export default function SubmittalReview() {
                   { label: 'Removed', value: revisionSummary.equipment_removed || 0, color: 'from-red-500 to-red-600' },
                   { label: 'Modified', value: revisionSummary.ratings_changed || 0, color: 'from-amber-500 to-amber-600' },
                 ].map((s) => (
-                  <div key={s.label} className="relative bg-slate-50 rounded-lg p-3 overflow-hidden">
+                  <div key={s.label} className="relative bg-slate-50 dark:bg-slate-700 rounded-lg p-3 overflow-hidden">
                     <div className={`absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r ${s.color}`} />
-                    <p className="text-xs text-slate-500">{s.label}</p>
-                    <p className="text-xl font-bold text-slate-800">{s.value}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{s.label}</p>
+                    <p className="text-xl font-bold text-slate-800 dark:text-slate-200">{s.value}</p>
                   </div>
                 ))}
               </div>
 
               {revisionChanges.length > 0 && (
-                <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-96 overflow-y-auto">
+                <div className="border border-slate-200 dark:border-slate-700 rounded-lg divide-y divide-slate-100 dark:divide-slate-700 max-h-96 overflow-y-auto">
                   {revisionChanges.map((change: any, i: number) => (
                     <div key={i} className={`px-4 py-3 text-sm ${
                       change.change_type === 'added' ? 'bg-emerald-50/50' :
@@ -393,9 +393,9 @@ export default function SubmittalReview() {
                           change.change_type === 'removed' ? 'badge-fail' :
                           'badge-review'
                         }`}>{change.change_type}</span>
-                        <span className="font-mono font-semibold text-slate-700">{change.equipment_id}</span>
+                        <span className="font-mono font-semibold text-slate-700 dark:text-slate-300">{change.equipment_id}</span>
                       </div>
-                      <p className="text-slate-600">{change.description}</p>
+                      <p className="text-slate-600 dark:text-slate-400">{change.description}</p>
                       {change.old_value && change.new_value && (
                         <p className="text-xs text-slate-500 mt-1">
                           <span className="line-through text-red-500">{change.old_value}</span>
@@ -414,13 +414,13 @@ export default function SubmittalReview() {
 
       {/* Spec Validation */}
       <details className="card">
-        <summary className="px-5 py-4 cursor-pointer font-semibold text-sm text-slate-700 hover:text-blue-600 flex items-center gap-2">
+        <summary className="px-5 py-4 cursor-pointer font-semibold text-sm text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 flex items-center gap-2">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15a2.25 2.25 0 012.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z" />
           </svg>
           Validate Against Spec (upload Division 26)
         </summary>
-        <div className="px-5 pb-5 border-t border-slate-100">
+        <div className="px-5 pb-5 border-t border-slate-100 dark:border-slate-700">
           <form onSubmit={async (e) => {
             e.preventDefault();
             const input = (e.currentTarget.querySelector('input[type=file]') as HTMLInputElement);
@@ -444,44 +444,44 @@ export default function SubmittalReview() {
 
       {/* Review Summary */}
       {reviewSummary && (
-        <div className="bg-white rounded-lg shadow p-4 border-l-4 border-blue-500 space-y-3">
-          <h3 className="font-bold">Review Summary</h3>
+        <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-4 border-l-4 border-blue-500 space-y-3">
+          <h3 className="font-bold dark:text-slate-100">Review Summary</h3>
 
           {/* Stats row */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
-            <div className="bg-gray-50 rounded p-2"><span className="text-gray-500 block text-xs">Total Checks</span><strong className="text-lg">{reviewSummary.total_checks}</strong></div>
-            <div className="bg-green-50 rounded p-2"><span className="text-green-600 block text-xs">Passed</span><strong className="text-lg text-green-700">{reviewSummary.passed}</strong></div>
-            <div className="bg-red-50 rounded p-2"><span className="text-red-600 block text-xs">Failed</span><strong className="text-lg text-red-700">{reviewSummary.failed}</strong></div>
-            <div className="bg-yellow-50 rounded p-2"><span className="text-yellow-600 block text-xs">Needs Review</span><strong className="text-lg text-yellow-700">{reviewSummary.needs_review}</strong></div>
-            <div className="bg-red-50 rounded p-2"><span className="text-red-700 block text-xs">Critical</span><strong className="text-lg text-red-800">{reviewSummary.critical_issues}</strong></div>
+            <div className="bg-gray-50 dark:bg-slate-700 rounded p-2"><span className="text-gray-500 dark:text-slate-400 block text-xs">Total Checks</span><strong className="text-lg dark:text-slate-100">{reviewSummary.total_checks}</strong></div>
+            <div className="bg-green-50 dark:bg-green-900/30 rounded p-2"><span className="text-green-600 dark:text-green-400 block text-xs">Passed</span><strong className="text-lg text-green-700 dark:text-green-400">{reviewSummary.passed}</strong></div>
+            <div className="bg-red-50 dark:bg-red-900/30 rounded p-2"><span className="text-red-600 dark:text-red-400 block text-xs">Failed</span><strong className="text-lg text-red-700 dark:text-red-400">{reviewSummary.failed}</strong></div>
+            <div className="bg-yellow-50 dark:bg-yellow-900/30 rounded p-2"><span className="text-yellow-600 dark:text-yellow-400 block text-xs">Needs Review</span><strong className="text-lg text-yellow-700 dark:text-yellow-400">{reviewSummary.needs_review}</strong></div>
+            <div className="bg-red-50 dark:bg-red-900/30 rounded p-2"><span className="text-red-700 dark:text-red-400 block text-xs">Critical</span><strong className="text-lg text-red-800 dark:text-red-300">{reviewSummary.critical_issues}</strong></div>
           </div>
 
           {/* Full review extras */}
           {reviewSummary.review_type === 'full_package' && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-              <div className="bg-blue-50 rounded p-2"><span className="text-blue-600 block text-xs">Pages Scanned</span><strong className="text-lg">{reviewSummary.total_pages}</strong></div>
-              <div className="bg-blue-50 rounded p-2"><span className="text-blue-600 block text-xs">Equipment Found</span><strong className="text-lg">{reviewSummary.equipment_count}</strong></div>
-              <div className="bg-purple-50 rounded p-2"><span className="text-purple-600 block text-xs">Cross-Ref Checks</span><strong className="text-lg">{reviewSummary.cross_reference_findings}</strong></div>
-              <div className="bg-orange-50 rounded p-2"><span className="text-orange-600 block text-xs">Major Issues</span><strong className="text-lg text-orange-700">{reviewSummary.major_issues}</strong></div>
+              <div className="bg-blue-50 dark:bg-blue-900/30 rounded p-2"><span className="text-blue-600 dark:text-blue-400 block text-xs">Pages Scanned</span><strong className="text-lg dark:text-slate-100">{reviewSummary.total_pages}</strong></div>
+              <div className="bg-blue-50 dark:bg-blue-900/30 rounded p-2"><span className="text-blue-600 dark:text-blue-400 block text-xs">Equipment Found</span><strong className="text-lg dark:text-slate-100">{reviewSummary.equipment_count}</strong></div>
+              <div className="bg-purple-50 dark:bg-purple-900/30 rounded p-2"><span className="text-purple-600 dark:text-purple-400 block text-xs">Cross-Ref Checks</span><strong className="text-lg dark:text-slate-100">{reviewSummary.cross_reference_findings}</strong></div>
+              <div className="bg-orange-50 dark:bg-orange-900/30 rounded p-2"><span className="text-orange-600 dark:text-orange-400 block text-xs">Major Issues</span><strong className="text-lg text-orange-700 dark:text-orange-400">{reviewSummary.major_issues}</strong></div>
             </div>
           )}
 
           {/* Equipment discovered */}
           {reviewSummary.equipment_found && reviewSummary.equipment_found.length > 0 && (
             <details className="text-sm">
-              <summary className="cursor-pointer font-medium text-blue-600 hover:underline">
+              <summary className="cursor-pointer font-medium text-blue-600 dark:text-blue-400 hover:underline">
                 Equipment Discovered ({reviewSummary.equipment_found.length} items)
               </summary>
               <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-1">
                 {reviewSummary.equipment_found.map((eq: any, i: number) => (
-                  <div key={i} className="flex items-center gap-2 text-xs bg-gray-50 rounded px-2 py-1">
-                    <span className="font-mono font-bold text-blue-700">{eq.designation}</span>
-                    <span className="text-gray-400">{eq.type}</span>
-                    {eq.kva && <span className="text-gray-600">{eq.kva}kVA</span>}
-                    {eq.kw && <span className="text-gray-600">{eq.kw}kW</span>}
-                    {eq.voltage && <span className="text-gray-600">{eq.voltage}</span>}
-                    {eq.amperage && <span className="text-gray-600">{eq.amperage}</span>}
-                    <span className="text-gray-300">pg{eq.page}</span>
+                  <div key={i} className="flex items-center gap-2 text-xs bg-gray-50 dark:bg-slate-700 rounded px-2 py-1">
+                    <span className="font-mono font-bold text-blue-700 dark:text-blue-400">{eq.designation}</span>
+                    <span className="text-gray-400 dark:text-slate-500">{eq.type}</span>
+                    {eq.kva && <span className="text-gray-600 dark:text-slate-400">{eq.kva}kVA</span>}
+                    {eq.kw && <span className="text-gray-600 dark:text-slate-400">{eq.kw}kW</span>}
+                    {eq.voltage && <span className="text-gray-600 dark:text-slate-400">{eq.voltage}</span>}
+                    {eq.amperage && <span className="text-gray-600 dark:text-slate-400">{eq.amperage}</span>}
+                    <span className="text-gray-300 dark:text-slate-600">pg{eq.page}</span>
                   </div>
                 ))}
               </div>
@@ -491,12 +491,12 @@ export default function SubmittalReview() {
           {/* Page breakdown */}
           {reviewSummary.page_breakdown && (
             <details className="text-sm">
-              <summary className="cursor-pointer font-medium text-blue-600 hover:underline">
+              <summary className="cursor-pointer font-medium text-blue-600 dark:text-blue-400 hover:underline">
                 Page Classification
               </summary>
               <div className="mt-2 flex flex-wrap gap-2">
                 {Object.entries(reviewSummary.page_breakdown).map(([type, count]: [string, any]) => (
-                  <span key={type} className="bg-gray-100 rounded px-2 py-1 text-xs">
+                  <span key={type} className="bg-gray-100 dark:bg-slate-700 rounded px-2 py-1 text-xs dark:text-slate-300">
                     {type.replace('_', ' ')}: <strong>{count}</strong>
                   </span>
                 ))}
@@ -504,23 +504,23 @@ export default function SubmittalReview() {
             </details>
           )}
 
-          <div className="text-sm font-semibold mt-1 pt-2 border-t">{reviewSummary.recommendation}</div>
+          <div className="text-sm font-semibold mt-1 pt-2 border-t dark:border-slate-700 dark:text-slate-200">{reviewSummary.recommendation}</div>
         </div>
       )}
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b">
+      <div className="flex gap-1 border-b dark:border-slate-700">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === tab.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+              activeTab === tab.id ? 'border-blue-600 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300'
             }`}
           >
             {tab.label}
             {tab.count !== undefined && tab.count > 0 && (
-              <span className="ml-1.5 px-1.5 py-0.5 bg-gray-200 rounded-full text-xs">{tab.count}</span>
+              <span className="ml-1.5 px-1.5 py-0.5 bg-gray-200 dark:bg-slate-700 rounded-full text-xs">{tab.count}</span>
             )}
           </button>
         ))}
@@ -530,27 +530,27 @@ export default function SubmittalReview() {
       {activeTab === 'review' && (
         <div className="space-y-4">
           {/* Sort & Filter controls */}
-          <div className="flex gap-3 bg-white rounded-lg shadow p-3 items-center">
-            <span className="text-sm text-gray-500">Sort by:</span>
+          <div className="flex gap-3 bg-white dark:bg-slate-800 rounded-lg shadow p-3 items-center">
+            <span className="text-sm text-gray-500 dark:text-slate-400">Sort by:</span>
             {(['severity', 'status', 'category'] as const).map((s) => (
               <button key={s} onClick={() => setReviewSort(s)}
-                className={`px-3 py-1 rounded text-sm ${reviewSort === s ? 'bg-blue-600 text-white' : 'bg-gray-100 hover:bg-gray-200'}`}
+                className={`px-3 py-1 rounded text-sm ${reviewSort === s ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-slate-700 dark:text-slate-300 hover:bg-gray-200 dark:hover:bg-slate-600'}`}
               >{s.charAt(0).toUpperCase() + s.slice(1)}</button>
             ))}
-            <span className="text-sm text-gray-500 ml-4">Show:</span>
+            <span className="text-sm text-gray-500 dark:text-slate-400 ml-4">Show:</span>
             {([['all', 'All'], ['fail', 'Failures'], ['review', 'Needs Review'], ['pass', 'Passed']] as const).map(([val, label]) => (
               <button key={val} onClick={() => setReviewFilter(val)}
-                className={`px-3 py-1 rounded text-sm ${reviewFilter === val ? 'bg-blue-600 text-white' : 'bg-gray-100 hover:bg-gray-200'}`}
+                className={`px-3 py-1 rounded text-sm ${reviewFilter === val ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-slate-700 dark:text-slate-300 hover:bg-gray-200 dark:hover:bg-slate-600'}`}
               >{label}</button>
             ))}
-            <span className="text-xs text-gray-400 ml-auto">{filteredResults.length} of {results.length} results</span>
+            <span className="text-xs text-gray-400 dark:text-slate-500 ml-auto">{filteredResults.length} of {results.length} results</span>
           </div>
 
           {sortedGroups.map(([group, items]) => (
-            <div key={group} className="bg-white rounded-lg shadow">
-              <div className="px-4 py-3 border-b bg-gray-50 rounded-t-lg flex items-center justify-between">
-                <h3 className="font-semibold text-sm">{group}</h3>
-                <span className="text-xs text-gray-400">{items.length} items</span>
+            <div key={group} className="bg-white dark:bg-slate-800 rounded-lg shadow">
+              <div className="px-4 py-3 border-b dark:border-slate-700 bg-gray-50 dark:bg-slate-700/50 rounded-t-lg flex items-center justify-between">
+                <h3 className="font-semibold text-sm dark:text-slate-200">{group}</h3>
+                <span className="text-xs text-gray-400 dark:text-slate-500">{items.length} items</span>
               </div>
               <div className="divide-y">
                 {items.map((r) => {
@@ -568,37 +568,37 @@ export default function SubmittalReview() {
 
                   return (
                     <div key={r.id}
-                      className={`px-4 py-3 cursor-pointer transition-colors ${isExpanded ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                      className={`px-4 py-3 cursor-pointer transition-colors ${isExpanded ? 'bg-blue-50 dark:bg-blue-900/20' : 'hover:bg-gray-50 dark:hover:bg-slate-700/50'}`}
                       onClick={() => setExpandedResult(isExpanded ? null : r.id)}
                     >
                       <div className="flex items-start gap-3">
                         <span className={`px-2 py-0.5 rounded text-xs font-bold ${status.color}`}>{status.icon}</span>
                         <div className="flex-1">
-                          <div className="text-sm font-medium">{r.check_name}</div>
-                          {!isExpanded && mainDetail && <div className="text-xs text-gray-500 mt-0.5 line-clamp-1">{mainDetail}</div>}
+                          <div className="text-sm font-medium dark:text-slate-200">{r.check_name}</div>
+                          {!isExpanded && mainDetail && <div className="text-xs text-gray-500 dark:text-slate-400 mt-0.5 line-clamp-1">{mainDetail}</div>}
                         </div>
                         {r.reference_standard && (
-                          <span className="text-xs text-gray-400 whitespace-nowrap">{r.reference_standard}</span>
+                          <span className="text-xs text-gray-400 dark:text-slate-500 whitespace-nowrap">{r.reference_standard}</span>
                         )}
-                        <span className="text-xs text-gray-300">{isExpanded ? '▼' : '▶'}</span>
+                        <span className="text-xs text-gray-300 dark:text-slate-600">{isExpanded ? '▼' : '▶'}</span>
                       </div>
 
                       {isExpanded && (
                         <div className="mt-3 ml-8 space-y-3">
                           {/* Finding Details */}
-                          <div className="bg-white border rounded p-3">
-                            <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Finding Details</div>
-                            <div className="text-sm text-gray-700">{mainDetail}</div>
+                          <div className="bg-white dark:bg-slate-800 border dark:border-slate-700 rounded p-3">
+                            <div className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase mb-1">Finding Details</div>
+                            <div className="text-sm text-gray-700 dark:text-slate-300">{mainDetail}</div>
                           </div>
 
                           {/* NEC Code Reference with Commentary */}
                           {r.reference_standard && (
-                            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                              <div className="text-xs font-semibold text-amber-700 uppercase mb-1">Code Reference</div>
-                              <div className="text-sm text-amber-900 font-semibold">{r.reference_standard}</div>
+                            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+                              <div className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase mb-1">Code Reference</div>
+                              <div className="text-sm text-amber-900 dark:text-amber-200 font-semibold">{r.reference_standard}</div>
                               {NEC_COMMENTARY[r.reference_standard.split(',')[0].trim()] && (
-                                <div className="mt-2 pt-2 border-t border-amber-200/50">
-                                  <p className="text-xs text-amber-800 leading-relaxed">
+                                <div className="mt-2 pt-2 border-t border-amber-200/50 dark:border-amber-800/50">
+                                  <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
                                     {NEC_COMMENTARY[r.reference_standard.split(',')[0].trim()]}
                                   </p>
                                 </div>
@@ -608,9 +608,9 @@ export default function SubmittalReview() {
 
                           {/* Recommendation */}
                           {recommendation && (
-                            <div className="bg-blue-50 border border-blue-200 rounded p-3">
-                              <div className="text-xs font-semibold text-blue-700 uppercase mb-1">Recommended Action</div>
-                              <div className="text-sm text-blue-900">{recommendation}</div>
+                            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded p-3">
+                              <div className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase mb-1">Recommended Action</div>
+                              <div className="text-sm text-blue-900 dark:text-blue-200">{recommendation}</div>
                             </div>
                           )}
 
@@ -655,7 +655,7 @@ export default function SubmittalReview() {
             </div>
           ))}
           {results.length === 0 && (
-            <div className="text-center py-12 text-gray-400">No review results yet. Click "Run Review" to analyze this submittal.</div>
+            <div className="text-center py-12 text-gray-400 dark:text-slate-500">No review results yet. Click "Run Review" to analyze this submittal.</div>
           )}
         </div>
       )}
@@ -663,21 +663,21 @@ export default function SubmittalReview() {
       {activeTab === 'comments' && (
         <div className="space-y-4">
           {/* Add Comment */}
-          <form onSubmit={handleAddComment} className="bg-white rounded-lg shadow p-4 space-y-3">
-            <h3 className="font-semibold text-sm">Add Comment</h3>
+          <form onSubmit={handleAddComment} className="bg-white dark:bg-slate-800 rounded-lg shadow p-4 space-y-3">
+            <h3 className="font-semibold text-sm dark:text-slate-200">Add Comment</h3>
             <textarea
               placeholder="Enter comment..."
               value={newComment.comment_text}
               onChange={(e) => setNewComment({ ...newComment, comment_text: e.target.value })}
               required
               rows={2}
-              className="border rounded px-3 py-2 text-sm w-full"
+              className="border dark:border-slate-600 rounded px-3 py-2 text-sm w-full bg-white dark:bg-slate-700 dark:text-slate-200 dark:placeholder-slate-500"
             />
             <div className="flex gap-3 items-center">
               <select
                 value={newComment.severity}
                 onChange={(e) => setNewComment({ ...newComment, severity: e.target.value })}
-                className="border rounded px-3 py-2 text-sm"
+                className="border dark:border-slate-600 rounded px-3 py-2 text-sm bg-white dark:bg-slate-700 dark:text-slate-200"
               >
                 <option value="critical">Critical</option>
                 <option value="major">Major</option>
@@ -688,27 +688,27 @@ export default function SubmittalReview() {
                 placeholder="Reference (e.g., NEC 110.26)"
                 value={newComment.reference_code}
                 onChange={(e) => setNewComment({ ...newComment, reference_code: e.target.value })}
-                className="border rounded px-3 py-2 text-sm flex-1"
+                className="border dark:border-slate-600 rounded px-3 py-2 text-sm flex-1 bg-white dark:bg-slate-700 dark:text-slate-200 dark:placeholder-slate-500"
               />
               <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded text-sm">Add</button>
             </div>
           </form>
 
           {/* Sort controls */}
-          <div className="flex gap-3 bg-white rounded-lg shadow p-3 items-center">
-            <span className="text-sm text-gray-500">Sort by:</span>
+          <div className="flex gap-3 bg-white dark:bg-slate-800 rounded-lg shadow p-3 items-center">
+            <span className="text-sm text-gray-500 dark:text-slate-400">Sort by:</span>
             {(['severity', 'status', 'date'] as const).map((s) => (
               <button key={s} onClick={() => setCommentSort(s)}
-                className={`px-3 py-1 rounded text-sm ${commentSort === s ? 'bg-blue-600 text-white' : 'bg-gray-100 hover:bg-gray-200'}`}
+                className={`px-3 py-1 rounded text-sm ${commentSort === s ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-slate-700 dark:text-slate-300 hover:bg-gray-200 dark:hover:bg-slate-600'}`}
               >{s.charAt(0).toUpperCase() + s.slice(1)}</button>
             ))}
-            <span className="text-xs text-gray-400 ml-auto">{comments.length} comments</span>
+            <span className="text-xs text-gray-400 dark:text-slate-500 ml-auto">{comments.length} comments</span>
           </div>
 
           {/* Comment List */}
           <div className="space-y-2">
             {sortedComments.map((c) => (
-              <div key={c.id} className={`bg-white rounded-lg shadow p-4 border-l-4 ${
+              <div key={c.id} className={`bg-white dark:bg-slate-800 rounded-lg shadow p-4 border-l-4 ${
                 c.status === 'resolved' ? 'border-green-400 opacity-60' :
                 c.status === 'deferred' ? 'border-gray-400 opacity-60' :
                 c.severity === 'critical' ? 'border-red-500' :
@@ -722,19 +722,19 @@ export default function SubmittalReview() {
                         {c.severity}
                       </span>
                       <span className={`px-2 py-0.5 rounded text-xs ${
-                        c.status === 'open' ? 'bg-red-50 text-red-600' :
-                        c.status === 'resolved' ? 'bg-green-50 text-green-600' :
-                        'bg-gray-50 text-gray-600'
+                        c.status === 'open' ? 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400' :
+                        c.status === 'resolved' ? 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400' :
+                        'bg-gray-50 dark:bg-slate-700 text-gray-600 dark:text-slate-400'
                       }`}>{c.status}</span>
-                      {c.reference_code && <span className="text-xs text-gray-400">{c.reference_code}</span>}
+                      {c.reference_code && <span className="text-xs text-gray-400 dark:text-slate-500">{c.reference_code}</span>}
                     </div>
-                    <p className="text-sm">{c.comment_text}</p>
-                    {c.resolution_notes && <p className="text-xs text-green-600 mt-1">Resolution: {c.resolution_notes}</p>}
+                    <p className="text-sm dark:text-slate-300">{c.comment_text}</p>
+                    {c.resolution_notes && <p className="text-xs text-green-600 dark:text-green-400 mt-1">Resolution: {c.resolution_notes}</p>}
                   </div>
                   {c.status === 'open' && (
                     <div className="flex gap-1 ml-3">
-                      <button onClick={() => handleResolve(c.id)} className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs hover:bg-green-200">Resolve</button>
-                      <button onClick={() => handleDefer(c.id)} className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs hover:bg-gray-200">Defer</button>
+                      <button onClick={() => handleResolve(c.id)} className="px-2 py-1 bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 rounded text-xs hover:bg-green-200 dark:hover:bg-green-900/60">Resolve</button>
+                      <button onClick={() => handleDefer(c.id)} className="px-2 py-1 bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-400 rounded text-xs hover:bg-gray-200 dark:hover:bg-slate-600">Defer</button>
                     </div>
                   )}
                 </div>
@@ -747,13 +747,13 @@ export default function SubmittalReview() {
       {activeTab === 'email' && (
         <div className="space-y-4">
           {/* Generate Email */}
-          <form onSubmit={handleGenerateEmail} className="bg-white rounded-lg shadow p-4 space-y-3">
-            <h3 className="font-semibold text-sm">Generate Email</h3>
+          <form onSubmit={handleGenerateEmail} className="bg-white dark:bg-slate-800 rounded-lg shadow p-4 space-y-3">
+            <h3 className="font-semibold text-sm dark:text-slate-200">Generate Email</h3>
             <div className="grid grid-cols-2 gap-3">
               <select
                 value={emailForm.email_type}
                 onChange={(e) => setEmailForm({ ...emailForm, email_type: e.target.value })}
-                className="border rounded px-3 py-2 text-sm"
+                className="border dark:border-slate-600 rounded px-3 py-2 text-sm bg-white dark:bg-slate-700 dark:text-slate-200"
               >
                 <option value="rfi">RFI (Request for Information)</option>
                 <option value="clarification">Clarification Request</option>
@@ -764,7 +764,7 @@ export default function SubmittalReview() {
                 placeholder="Recipients (email addresses)"
                 value={emailForm.recipients}
                 onChange={(e) => setEmailForm({ ...emailForm, recipients: e.target.value })}
-                className="border rounded px-3 py-2 text-sm"
+                className="border dark:border-slate-600 rounded px-3 py-2 text-sm bg-white dark:bg-slate-700 dark:text-slate-200 dark:placeholder-slate-500"
               />
             </div>
             <textarea
@@ -772,25 +772,25 @@ export default function SubmittalReview() {
               value={emailForm.additional_notes}
               onChange={(e) => setEmailForm({ ...emailForm, additional_notes: e.target.value })}
               rows={2}
-              className="border rounded px-3 py-2 text-sm w-full"
+              className="border dark:border-slate-600 rounded px-3 py-2 text-sm w-full bg-white dark:bg-slate-700 dark:text-slate-200 dark:placeholder-slate-500"
             />
             <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded text-sm">Generate Email</button>
           </form>
 
           {/* Generated Email Preview */}
           {selectedEmail && (
-            <div className="bg-white rounded-lg shadow p-4">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-4">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold">Generated Email</h3>
+                <h3 className="font-semibold dark:text-slate-200">Generated Email</h3>
                 <button
                   onClick={() => navigator.clipboard.writeText(selectedEmail.body)}
-                  className="px-3 py-1 bg-gray-100 rounded text-sm hover:bg-gray-200"
+                  className="px-3 py-1 bg-gray-100 dark:bg-slate-700 dark:text-slate-300 rounded text-sm hover:bg-gray-200 dark:hover:bg-slate-600"
                 >
                   Copy to Clipboard
                 </button>
               </div>
-              <div className="text-sm mb-2"><strong>Subject:</strong> {selectedEmail.subject}</div>
-              <pre className="text-sm bg-gray-50 rounded p-4 whitespace-pre-wrap font-mono border max-h-96 overflow-y-auto">
+              <div className="text-sm mb-2 dark:text-slate-300"><strong>Subject:</strong> {selectedEmail.subject}</div>
+              <pre className="text-sm bg-gray-50 dark:bg-slate-700 dark:text-slate-300 rounded p-4 whitespace-pre-wrap font-mono border dark:border-slate-600 max-h-96 overflow-y-auto">
                 {selectedEmail.body}
               </pre>
             </div>
@@ -798,22 +798,22 @@ export default function SubmittalReview() {
 
           {/* Email History */}
           {emails.length > 0 && (
-            <div className="bg-white rounded-lg shadow">
-              <div className="px-4 py-3 border-b bg-gray-50 rounded-t-lg">
-                <h3 className="font-semibold text-sm">Email History</h3>
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow">
+              <div className="px-4 py-3 border-b dark:border-slate-700 bg-gray-50 dark:bg-slate-700/50 rounded-t-lg">
+                <h3 className="font-semibold text-sm dark:text-slate-200">Email History</h3>
               </div>
               <div className="divide-y">
                 {emails.map((em) => (
                   <div
                     key={em.id}
                     onClick={() => setSelectedEmail(em)}
-                    className="px-4 py-3 cursor-pointer hover:bg-gray-50 flex justify-between items-center"
+                    className="px-4 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700/50 flex justify-between items-center"
                   >
                     <div>
-                      <div className="text-sm font-medium">{em.subject}</div>
-                      <div className="text-xs text-gray-400">{em.email_type} - {new Date(em.created_at).toLocaleDateString()}</div>
+                      <div className="text-sm font-medium dark:text-slate-200">{em.subject}</div>
+                      <div className="text-xs text-gray-400 dark:text-slate-500">{em.email_type} - {new Date(em.created_at).toLocaleDateString()}</div>
                     </div>
-                    <span className={`text-xs px-2 py-0.5 rounded ${em.sent ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                    <span className={`text-xs px-2 py-0.5 rounded ${em.sent ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400' : 'bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400'}`}>
                       {em.sent ? 'Sent' : 'Draft'}
                     </span>
                   </div>
@@ -825,20 +825,20 @@ export default function SubmittalReview() {
       )}
 
       {activeTab === 'pdf' && (
-        <div className="bg-white rounded-lg shadow">
+        <div className="bg-white dark:bg-slate-800 rounded-lg shadow">
           {/* PDF toolbar */}
-          <div className="flex items-center justify-between px-4 py-2 border-b bg-gray-50 rounded-t-lg">
+          <div className="flex items-center justify-between px-4 py-2 border-b dark:border-slate-700 bg-gray-50 dark:bg-slate-700/50 rounded-t-lg">
             <div className="flex gap-2">
               <button
                 onClick={() => setViewingMarkup(false)}
-                className={`px-3 py-1 rounded text-sm font-medium ${!viewingMarkup ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                className={`px-3 py-1 rounded text-sm font-medium ${!viewingMarkup ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-slate-600 text-gray-700 dark:text-slate-300 hover:bg-gray-300 dark:hover:bg-slate-500'}`}
               >
                 Original PDF
               </button>
               <button
                 onClick={() => { if (hasAnnotated) setViewingMarkup(true); }}
                 disabled={!hasAnnotated}
-                className={`px-3 py-1 rounded text-sm font-medium ${viewingMarkup ? 'bg-purple-600 text-white' : hasAnnotated ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}
+                className={`px-3 py-1 rounded text-sm font-medium ${viewingMarkup ? 'bg-purple-600 text-white' : hasAnnotated ? 'bg-gray-200 dark:bg-slate-600 text-gray-700 dark:text-slate-300 hover:bg-gray-300 dark:hover:bg-slate-500' : 'bg-gray-100 dark:bg-slate-700 text-gray-400 dark:text-slate-500 cursor-not-allowed'}`}
               >
                 Marked Up PDF
               </button>
@@ -847,21 +847,21 @@ export default function SubmittalReview() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => { if (pdfPage > 1) setPdfPage(pdfPage - 1); }}
-                className="px-2 py-1 bg-gray-200 rounded text-sm hover:bg-gray-300"
+                className="px-2 py-1 bg-gray-200 dark:bg-slate-600 dark:text-slate-300 rounded text-sm hover:bg-gray-300 dark:hover:bg-slate-500"
               >
                 ←
               </button>
-              <span className="text-xs text-gray-500">Page</span>
+              <span className="text-xs text-gray-500 dark:text-slate-400">Page</span>
               <input
                 type="number"
                 value={pdfPage}
                 onChange={(e) => setPdfPage(Math.max(1, parseInt(e.target.value) || 1))}
-                className="w-16 border rounded px-2 py-1 text-sm text-center"
+                className="w-16 border dark:border-slate-600 rounded px-2 py-1 text-sm text-center bg-white dark:bg-slate-700 dark:text-slate-200"
                 min={1}
               />
               <button
                 onClick={() => setPdfPage(pdfPage + 1)}
-                className="px-2 py-1 bg-gray-200 rounded text-sm hover:bg-gray-300"
+                className="px-2 py-1 bg-gray-200 dark:bg-slate-600 dark:text-slate-300 rounded text-sm hover:bg-gray-300 dark:hover:bg-slate-500"
               >
                 →
               </button>
@@ -880,7 +880,7 @@ export default function SubmittalReview() {
                 href={viewingMarkup && hasAnnotated ? getAnnotatedPdfUrl(Number(submittalId)) : getSubmittalPdfUrl(Number(submittalId))}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300"
+                className="px-3 py-1 bg-gray-200 dark:bg-slate-600 text-gray-700 dark:text-slate-300 rounded text-sm hover:bg-gray-300 dark:hover:bg-slate-500"
               >
                 Open in New Tab
               </a>

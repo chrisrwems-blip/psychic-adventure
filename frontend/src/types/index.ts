@@ -107,5 +107,6 @@ export interface DashboardStats {
   open_comments: number;
   critical_issues: number;
   submittals_by_status: Record<string, number>;
+  comments_by_severity: Record<string, number>;
   recent_submittals: Array<{ id: number; title: string; equipment_type: string; status: string }>;
 }
