@@ -163,16 +163,67 @@ export default function SubmittalReview() {
 
       {/* Review Summary */}
       {reviewSummary && (
-        <div className="bg-white rounded-lg shadow p-4 border-l-4 border-blue-500">
-          <h3 className="font-bold mb-2">Review Summary</h3>
+        <div className="bg-white rounded-lg shadow p-4 border-l-4 border-blue-500 space-y-3">
+          <h3 className="font-bold">Review Summary</h3>
+
+          {/* Stats row */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
-            <div><span className="text-gray-500">Total Checks:</span> <strong>{reviewSummary.total_checks}</strong></div>
-            <div><span className="text-green-600">Passed:</span> <strong>{reviewSummary.passed}</strong></div>
-            <div><span className="text-red-600">Failed:</span> <strong>{reviewSummary.failed}</strong></div>
-            <div><span className="text-yellow-600">Needs Review:</span> <strong>{reviewSummary.needs_review}</strong></div>
-            <div><span className="text-red-700">Critical:</span> <strong>{reviewSummary.critical_issues}</strong></div>
+            <div className="bg-gray-50 rounded p-2"><span className="text-gray-500 block text-xs">Total Checks</span><strong className="text-lg">{reviewSummary.total_checks}</strong></div>
+            <div className="bg-green-50 rounded p-2"><span className="text-green-600 block text-xs">Passed</span><strong className="text-lg text-green-700">{reviewSummary.passed}</strong></div>
+            <div className="bg-red-50 rounded p-2"><span className="text-red-600 block text-xs">Failed</span><strong className="text-lg text-red-700">{reviewSummary.failed}</strong></div>
+            <div className="bg-yellow-50 rounded p-2"><span className="text-yellow-600 block text-xs">Needs Review</span><strong className="text-lg text-yellow-700">{reviewSummary.needs_review}</strong></div>
+            <div className="bg-red-50 rounded p-2"><span className="text-red-700 block text-xs">Critical</span><strong className="text-lg text-red-800">{reviewSummary.critical_issues}</strong></div>
           </div>
-          <div className="mt-2 text-sm font-semibold">{reviewSummary.recommendation}</div>
+
+          {/* Full review extras */}
+          {reviewSummary.review_type === 'full_package' && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div className="bg-blue-50 rounded p-2"><span className="text-blue-600 block text-xs">Pages Scanned</span><strong className="text-lg">{reviewSummary.total_pages}</strong></div>
+              <div className="bg-blue-50 rounded p-2"><span className="text-blue-600 block text-xs">Equipment Found</span><strong className="text-lg">{reviewSummary.equipment_count}</strong></div>
+              <div className="bg-purple-50 rounded p-2"><span className="text-purple-600 block text-xs">Cross-Ref Checks</span><strong className="text-lg">{reviewSummary.cross_reference_findings}</strong></div>
+              <div className="bg-orange-50 rounded p-2"><span className="text-orange-600 block text-xs">Major Issues</span><strong className="text-lg text-orange-700">{reviewSummary.major_issues}</strong></div>
+            </div>
+          )}
+
+          {/* Equipment discovered */}
+          {reviewSummary.equipment_found && reviewSummary.equipment_found.length > 0 && (
+            <details className="text-sm">
+              <summary className="cursor-pointer font-medium text-blue-600 hover:underline">
+                Equipment Discovered ({reviewSummary.equipment_found.length} items)
+              </summary>
+              <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-1">
+                {reviewSummary.equipment_found.map((eq: any, i: number) => (
+                  <div key={i} className="flex items-center gap-2 text-xs bg-gray-50 rounded px-2 py-1">
+                    <span className="font-mono font-bold text-blue-700">{eq.designation}</span>
+                    <span className="text-gray-400">{eq.type}</span>
+                    {eq.kva && <span className="text-gray-600">{eq.kva}kVA</span>}
+                    {eq.kw && <span className="text-gray-600">{eq.kw}kW</span>}
+                    {eq.voltage && <span className="text-gray-600">{eq.voltage}</span>}
+                    {eq.amperage && <span className="text-gray-600">{eq.amperage}</span>}
+                    <span className="text-gray-300">pg{eq.page}</span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+
+          {/* Page breakdown */}
+          {reviewSummary.page_breakdown && (
+            <details className="text-sm">
+              <summary className="cursor-pointer font-medium text-blue-600 hover:underline">
+                Page Classification
+              </summary>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {Object.entries(reviewSummary.page_breakdown).map(([type, count]: [string, any]) => (
+                  <span key={type} className="bg-gray-100 rounded px-2 py-1 text-xs">
+                    {type.replace('_', ' ')}: <strong>{count}</strong>
+                  </span>
+                ))}
+              </div>
+            </details>
+          )}
+
+          <div className="text-sm font-semibold mt-1 pt-2 border-t">{reviewSummary.recommendation}</div>
         </div>
       )}
 

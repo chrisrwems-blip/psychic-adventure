@@ -5,19 +5,29 @@ from app.database import get_db
 from app.models.database_models import ReviewResult, Submittal
 from app.models.schemas import ReviewResultResponse
 from app.services.review_service import run_review
+from app.services.full_review_service import run_full_review
 from app.review_engine.registry import get_available_equipment_types
 
 router = APIRouter(prefix="/api/reviews", tags=["reviews"])
 
 
 @router.post("/{submittal_id}/run")
-def trigger_review(submittal_id: int, db: Session = Depends(get_db)):
-    """Run the automated review engine on a submittal."""
+def trigger_review(submittal_id: int, full: bool = True, db: Session = Depends(get_db)):
+    """Run the automated review engine on a submittal.
+
+    full=True (default): Full package review — scans every page, finds every
+    piece of equipment, runs all applicable checklists, cross-references sizing.
+
+    full=False: Single equipment type review (original behavior).
+    """
     submittal = db.query(Submittal).filter(Submittal.id == submittal_id).first()
     if not submittal:
         raise HTTPException(status_code=404, detail="Submittal not found")
     try:
-        summary = run_review(db, submittal_id)
+        if full:
+            summary = run_full_review(db, submittal_id)
+        else:
+            summary = run_review(db, submittal_id)
         return summary
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
