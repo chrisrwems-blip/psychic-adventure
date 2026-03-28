@@ -17,8 +17,9 @@ backend/annotated/
 .vscode/
 .idea/
 
-# Email credentials (contains passwords)
+# User settings (contains passwords/personal info)
 backend/email_settings.json
+backend/profile_settings.json
 
 # Electron build artifacts
 backend/build/

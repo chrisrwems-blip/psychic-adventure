@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getEmailSettings, saveEmailSettings, deleteEmailSettings, detectSmtpProvider, testEmailConnection } from '../api/client';
+import { getEmailSettings, saveEmailSettings, deleteEmailSettings, detectSmtpProvider, testEmailConnection, getProfile, saveProfile } from '../api/client';
 
 export default function Settings() {
   const [form, setForm] = useState({ email: '', password: '', host: '', port: 587, display_name: '' });
@@ -9,8 +9,17 @@ export default function Settings() {
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
+  const [profile, setProfile] = useState({
+    reviewer_name: '', reviewer_title: '',
+    company_name: '', company_address: '', company_phone: '',
+    default_jurisdiction: 'auto', review_sla_days: 5, report_min_severity: 'minor',
+  });
+  const [profileSaved, setProfileSaved] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+
   useEffect(() => {
     loadSettings();
+    loadProfile();
   }, []);
 
   const loadSettings = async () => {
@@ -67,6 +76,29 @@ export default function Settings() {
     setConfigured(false);
     setForm({ email: '', password: '', host: '', port: 587, display_name: '' });
     setTestResult(null);
+  };
+
+  const loadProfile = async () => {
+    try {
+      const res = await getProfile();
+      setProfile(res.data);
+    } catch (e) {
+      console.error('Failed to load profile', e);
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    setSavingProfile(true);
+    setProfileSaved(false);
+    try {
+      await saveProfile(profile);
+      setProfileSaved(true);
+      setTimeout(() => setProfileSaved(false), 3000);
+    } catch (e) {
+      console.error('Failed to save profile', e);
+    } finally {
+      setSavingProfile(false);
+    }
   };
 
   return (
@@ -232,6 +264,159 @@ export default function Settings() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Reviewer & Company Profile */}
+      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-100 dark:border-slate-700 bg-gray-50/80 dark:bg-slate-800/80">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center">
+              <svg className="w-5 h-5 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100">Reviewer & Company</h3>
+              <p className="text-xs text-gray-500 dark:text-slate-400">Pre-fills approval stamps, emails, and report headers</p>
+            </div>
+          </div>
+        </div>
+        <div className="p-6 space-y-5">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">Reviewer Name</label>
+              <input
+                type="text"
+                placeholder="Chris Williams, PE"
+                value={profile.reviewer_name}
+                onChange={(e) => setProfile({ ...profile, reviewer_name: e.target.value })}
+                className="w-full border border-gray-300 dark:border-slate-600 rounded-lg px-3.5 py-2.5 text-sm text-gray-900 dark:text-slate-200 bg-white dark:bg-slate-700 placeholder:text-gray-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">Title</label>
+              <input
+                type="text"
+                placeholder="Senior Electrical Engineer"
+                value={profile.reviewer_title}
+                onChange={(e) => setProfile({ ...profile, reviewer_title: e.target.value })}
+                className="w-full border border-gray-300 dark:border-slate-600 rounded-lg px-3.5 py-2.5 text-sm text-gray-900 dark:text-slate-200 bg-white dark:bg-slate-700 placeholder:text-gray-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">Company Name</label>
+            <input
+              type="text"
+              placeholder="POSITRON"
+              value={profile.company_name}
+              onChange={(e) => setProfile({ ...profile, company_name: e.target.value })}
+              className="w-full border border-gray-300 dark:border-slate-600 rounded-lg px-3.5 py-2.5 text-sm text-gray-900 dark:text-slate-200 bg-white dark:bg-slate-700 placeholder:text-gray-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">Company Address</label>
+              <input
+                type="text"
+                placeholder="123 Main St, Dallas, TX 75201"
+                value={profile.company_address}
+                onChange={(e) => setProfile({ ...profile, company_address: e.target.value })}
+                className="w-full border border-gray-300 dark:border-slate-600 rounded-lg px-3.5 py-2.5 text-sm text-gray-900 dark:text-slate-200 bg-white dark:bg-slate-700 placeholder:text-gray-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">Phone</label>
+              <input
+                type="text"
+                placeholder="(214) 555-0100"
+                value={profile.company_phone}
+                onChange={(e) => setProfile({ ...profile, company_phone: e.target.value })}
+                className="w-full border border-gray-300 dark:border-slate-600 rounded-lg px-3.5 py-2.5 text-sm text-gray-900 dark:text-slate-200 bg-white dark:bg-slate-700 placeholder:text-gray-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Review Preferences */}
+      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-100 dark:border-slate-700 bg-gray-50/80 dark:bg-slate-800/80">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-amber-50 dark:bg-amber-900/30 flex items-center justify-center">
+              <svg className="w-5 h-5 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100">Review Preferences</h3>
+              <p className="text-xs text-gray-500 dark:text-slate-400">Default settings for new reviews</p>
+            </div>
+          </div>
+        </div>
+        <div className="p-6 space-y-5">
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">Default Jurisdiction</label>
+              <select
+                value={profile.default_jurisdiction}
+                onChange={(e) => setProfile({ ...profile, default_jurisdiction: e.target.value })}
+                className="w-full border border-gray-300 dark:border-slate-600 rounded-lg px-3.5 py-2.5 text-sm text-gray-900 dark:text-slate-200 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              >
+                <option value="auto">Auto-Detect</option>
+                <option value="NEC">NEC (US)</option>
+                <option value="IEC">IEC (International)</option>
+                <option value="AS/NZS">AS/NZS (Australia/NZ)</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">Review SLA (days)</label>
+              <select
+                value={profile.review_sla_days}
+                onChange={(e) => setProfile({ ...profile, review_sla_days: parseInt(e.target.value) })}
+                className="w-full border border-gray-300 dark:border-slate-600 rounded-lg px-3.5 py-2.5 text-sm text-gray-900 dark:text-slate-200 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              >
+                <option value={3}>3 days</option>
+                <option value={5}>5 days</option>
+                <option value={7}>7 days</option>
+                <option value={10}>10 days</option>
+                <option value={14}>14 days</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">Report Min Severity</label>
+              <select
+                value={profile.report_min_severity}
+                onChange={(e) => setProfile({ ...profile, report_min_severity: e.target.value })}
+                className="w-full border border-gray-300 dark:border-slate-600 rounded-lg px-3.5 py-2.5 text-sm text-gray-900 dark:text-slate-200 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              >
+                <option value="critical">Critical only</option>
+                <option value="major">Critical + Major</option>
+                <option value="minor">Critical + Major + Minor</option>
+                <option value="info">All (including Info)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Save Profile Button */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={handleSaveProfile}
+          disabled={savingProfile}
+          className="px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 shadow-sm transition-colors disabled:opacity-50"
+        >
+          {savingProfile ? 'Saving...' : 'Save Profile & Preferences'}
+        </button>
+        {profileSaved && (
+          <span className="text-sm text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+            </svg>
+            Saved
+          </span>
+        )}
       </div>
 
       {/* Vision AI Status */}
