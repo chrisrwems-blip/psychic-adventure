@@ -80,6 +80,8 @@ def annotate_pdf(db: Session, submittal_id: int) -> str:
     summary_buffer = _create_summary_pages(comments, submittal)
     summary_reader = PdfReader(summary_buffer)
 
+    summary_page_count = len(summary_reader.pages)
+
     final_writer = PdfWriter()
     for sp in summary_reader.pages:
         final_writer.add_page(sp)
@@ -97,7 +99,7 @@ def annotate_pdf(db: Session, submittal_id: int) -> str:
 
     submittal.annotated_file_path = annotated_path
     db.commit()
-    return annotated_path
+    return annotated_path, summary_page_count
 
 
 def _create_annotation_overlay(comments: list, page_width: float, page_height: float) -> BytesIO:

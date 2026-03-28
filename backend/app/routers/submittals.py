@@ -136,8 +136,12 @@ def annotate_submittal(submittal_id: int, db: Session = Depends(get_db)):
     """Generate an annotated/marked-up PDF with all review comments."""
     from app.services.pdf_annotator import annotate_pdf
     try:
-        annotated_path = annotate_pdf(db, submittal_id)
-        return {"annotated_file_path": annotated_path, "detail": "Annotated PDF created"}
+        annotated_path, summary_pages = annotate_pdf(db, submittal_id)
+        return {
+            "annotated_file_path": annotated_path,
+            "summary_page_count": summary_pages,
+            "detail": "Annotated PDF created",
+        }
     except (ValueError, FileNotFoundError) as e:
         raise HTTPException(status_code=404, detail=str(e))
 
