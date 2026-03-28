@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getProject, getSubmittals, uploadSubmittal, getEquipmentTypes } from '../api/client';
+import { getProject, getSubmittals, uploadSubmittal, runBatchReview, getEquipmentTypes } from '../api/client';
 import type { Project, Submittal } from '../types';
 
 // --- Helpers ---
@@ -97,11 +97,28 @@ export default function ProjectDetail() {
     manufacturer: '', model_number: '', spec_section: '',
     submitted_by: '', contractor: '',
   });
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [batchIds, setBatchIds] = useState<number[]>([]);
+  const [batchActive, setBatchActive] = useState(false);
 
   useEffect(() => {
     if (projectId) loadData();
   }, [projectId]);
+
+  // Poll for batch review progress
+  useEffect(() => {
+    if (!batchActive || batchIds.length === 0) return;
+    const interval = setInterval(async () => {
+      const res = await getSubmittals(Number(projectId));
+      setSubmittals(res.data);
+      const batchSubmittals = res.data.filter((s: Submittal) => batchIds.includes(s.id));
+      const allDone = batchSubmittals.every((s: Submittal) => s.status !== 'reviewing');
+      if (allDone) {
+        setBatchActive(false);
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [batchActive, batchIds, projectId]);
 
   // Close modal on Escape key
   useEffect(() => {
@@ -128,27 +145,45 @@ export default function ProjectDetail() {
   };
 
   const resetForm = () => {
-    setFile(null);
+    setFiles([]);
     setForm({ title: '', equipment_type: 'auto', submittal_number: '', manufacturer: '', model_number: '', spec_section: '', submitted_by: '', contractor: '' });
   };
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file) return;
+    if (files.length === 0) return;
 
     setUploading(true);
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('project_id', String(projectId));
-    Object.entries(form).forEach(([key, val]) => {
-      if (val) formData.append(key, val);
-    });
+    const uploadedIds: number[] = [];
 
     try {
-      await uploadSubmittal(formData);
+      for (const file of files) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('project_id', String(projectId));
+        // Use filename as title if no explicit title set, or append filename for batch
+        const title = files.length === 1 && form.title
+          ? form.title
+          : file.name.replace(/\.pdf$/i, '');
+        formData.append('title', title);
+        Object.entries(form).forEach(([key, val]) => {
+          if (val && key !== 'title') formData.append(key, val);
+        });
+
+        const res = await uploadSubmittal(formData);
+        uploadedIds.push(res.data.id);
+      }
+
       setShowUpload(false);
       resetForm();
       loadData();
+
+      // Auto-trigger batch review if multiple files
+      if (uploadedIds.length > 1) {
+        await runBatchReview(uploadedIds);
+        setBatchIds(uploadedIds);
+        setBatchActive(true);
+      }
     } catch (e) {
       console.error('Upload failed', e);
     } finally {
@@ -170,9 +205,9 @@ export default function ProjectDetail() {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
-    const dropped = e.dataTransfer.files?.[0];
-    if (dropped && dropped.type === 'application/pdf') {
-      setFile(dropped);
+    const dropped = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
+    if (dropped.length > 0) {
+      setFiles(prev => [...prev, ...dropped]);
     }
   }, []);
 
@@ -295,7 +330,7 @@ export default function ProjectDetail() {
                   className={`relative cursor-pointer rounded-xl border-2 border-dashed p-8 text-center transition-all
                     ${dragActive
                       ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/30 ring-4 ring-blue-100 dark:ring-blue-900/50'
-                      : file
+                      : files.length > 0
                         ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/30'
                         : 'border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-700 hover:border-gray-300 dark:hover:border-slate-600 hover:bg-gray-100 dark:hover:bg-slate-600'
                     }`}
@@ -304,24 +339,42 @@ export default function ProjectDetail() {
                     ref={fileInputRef}
                     type="file"
                     accept=".pdf"
-                    onChange={(e) => setFile(e.target.files?.[0] || null)}
+                    multiple
+                    onChange={(e) => {
+                      const selected = Array.from(e.target.files || []).filter(f => f.type === 'application/pdf');
+                      if (selected.length > 0) setFiles(prev => [...prev, ...selected]);
+                    }}
                     className="hidden"
                   />
-                  {file ? (
-                    <div className="space-y-2">
+                  {files.length > 0 ? (
+                    <div className="space-y-3">
                       <div className="mx-auto w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center">
                         <svg className="w-6 h-6 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
                       </div>
-                      <p className="text-sm font-semibold text-gray-900 dark:text-slate-100">{file.name}</p>
-                      <p className="text-xs text-gray-500 dark:text-slate-400">{formatFileSize(file.size)} — Click or drag to replace</p>
+                      <div className="space-y-1">
+                        {files.map((f, i) => (
+                          <div key={i} className="flex items-center justify-center gap-2 text-sm">
+                            <span className="font-medium text-gray-900 dark:text-slate-100">{f.name}</span>
+                            <span className="text-gray-400 dark:text-slate-500 text-xs">{formatFileSize(f.size)}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); setFiles(files.filter((_, j) => j !== i)); }}
+                              className="text-red-400 hover:text-red-600 dark:hover:text-red-400 text-xs"
+                            >
+                              remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-gray-500 dark:text-slate-400">Click or drag to add more files</p>
                     </div>
                   ) : (
                     <div className="space-y-2">
                       <div className="mx-auto w-12 h-12 rounded-xl bg-gray-100 dark:bg-slate-700 flex items-center justify-center">
                         <svg className="w-6 h-6 text-gray-400 dark:text-slate-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" /></svg>
                       </div>
-                      <p className="text-sm font-semibold text-gray-700 dark:text-slate-300">Drop your PDF here, or click to browse</p>
-                      <p className="text-xs text-gray-400 dark:text-slate-500">PDF files only</p>
+                      <p className="text-sm font-semibold text-gray-700 dark:text-slate-300">Drop your PDFs here, or click to browse</p>
+                      <p className="text-xs text-gray-400 dark:text-slate-500">PDF files — select multiple for batch review</p>
                     </div>
                   )}
                 </div>
@@ -329,12 +382,12 @@ export default function ProjectDetail() {
                 {/* Form Fields */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="col-span-2 sm:col-span-1">
-                    <label className="block text-xs font-semibold text-gray-600 dark:text-slate-400 mb-1.5">Title <span className="text-red-400">*</span></label>
+                    <label className="block text-xs font-semibold text-gray-600 dark:text-slate-400 mb-1.5">Title {files.length <= 1 && <span className="text-red-400">*</span>}</label>
                     <input
-                      placeholder="e.g. Main Switchgear MSB-1"
+                      placeholder={files.length > 1 ? "Auto-derived from filenames" : "e.g. Main Switchgear MSB-1"}
                       value={form.title}
                       onChange={(e) => setForm({ ...form, title: e.target.value })}
-                      required
+                      required={files.length <= 1}
                       className="w-full border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-800 placeholder:text-gray-400 dark:placeholder:text-slate-500 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
                     />
                   </div>
@@ -419,7 +472,7 @@ export default function ProjectDetail() {
                   </button>
                   <button
                     type="submit"
-                    disabled={uploading || !file || !form.title}
+                    disabled={uploading || files.length === 0 || (files.length === 1 && !form.title)}
                     className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-sm hover:bg-blue-700 active:bg-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
                   >
                     {uploading ? (
@@ -430,13 +483,51 @@ export default function ProjectDetail() {
                     ) : (
                       <>
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" /></svg>
-                        Upload & Create
+                        {files.length > 1 ? `Upload & Review (${files.length} files)` : 'Upload & Create'}
                       </>
                     )}
                   </button>
                 </div>
               </form>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Batch Review Progress */}
+      {batchActive && batchIds.length > 0 && (
+        <div className="bg-white dark:bg-slate-800 rounded-xl border border-blue-200 dark:border-blue-800 shadow-sm p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-blue-700 dark:text-blue-400 flex items-center gap-2">
+              <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+              Batch Review in Progress
+            </h3>
+            <span className="text-xs text-gray-500 dark:text-slate-400">
+              {submittals.filter(s => batchIds.includes(s.id) && s.status !== 'reviewing').length} of {batchIds.length} complete
+            </span>
+          </div>
+          <div className="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2">
+            <div
+              className="bg-blue-600 h-2 rounded-full transition-all duration-500"
+              style={{ width: `${(submittals.filter(s => batchIds.includes(s.id) && s.status !== 'reviewing').length / batchIds.length) * 100}%` }}
+            />
+          </div>
+          <div className="grid gap-2">
+            {submittals.filter(s => batchIds.includes(s.id)).map(s => (
+              <div key={s.id} className="flex items-center gap-3 text-sm">
+                {s.status === 'reviewing' ? (
+                  <svg className="animate-spin w-4 h-4 text-blue-500" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                ) : (
+                  <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
+                )}
+                <span className="text-gray-700 dark:text-slate-300">{s.title}</span>
+                {s.status !== 'reviewing' && (
+                  <Link to={`/submittal/${s.id}`} className="text-xs text-blue-600 dark:text-blue-400 hover:underline ml-auto">
+                    View Report
+                  </Link>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}
