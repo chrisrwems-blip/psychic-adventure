@@ -89,6 +89,19 @@ def run_cross_reference(
     findings.extend(_check_fuse_schedule(pages))
     findings.extend(_check_cable_congestion(equipment, pages))
 
+    # --- Numerical sanity checks ---
+    findings.extend(_check_transformer_vs_load(equipment, topology))
+    findings.extend(_check_voltage_consistency_per_device(equipment))
+    findings.extend(_check_impedance_plausibility(equipment))
+    findings.extend(_check_pole_count_sanity(equipment))
+    findings.extend(_check_conductor_count_vs_breaker(equipment))
+
+    # --- Document completeness audits ---
+    findings.extend(_check_sld_vs_cutsheet_coverage(equipment, pages))
+    findings.extend(_check_cable_schedule_completeness(equipment, pages))
+    findings.extend(_check_revision_consistency(pages))
+    findings.extend(_check_title_block_consistency(pages))
+
     return findings
 
 
@@ -988,3 +1001,235 @@ def _check_cable_congestion(equipment: list, pages: Optional[list]) -> list[Cros
             ))
 
     return findings
+
+
+# ===========================================================================
+# 22-31: GENERIC INTELLIGENCE CHECKS (equipment-agnostic)
+# ===========================================================================
+
+def _check_transformer_vs_load(equipment: list, topology: Optional[SystemTopology]) -> list[CrossRefFinding]:
+    """Flag transformers whose downstream load exceeds their capacity."""
+    findings = []
+    if not topology:
+        return findings
+    for eq in equipment:
+        if eq.equipment_type != "transformer" or not eq.kva:
+            continue
+        kva = float(eq.kva)
+        fla = transformer_fla(kva, 480)
+        node = topology.get_node(eq.designation)
+        if not node:
+            continue
+        downstream = topology.get_downstream_tree(eq.designation)
+        total_amps = sum(d.amperage or 0 for d in downstream if d.equipment_type == "breaker")
+        if total_amps > 0 and total_amps > fla * 1.5:
+            findings.append(CrossRefFinding(
+                finding_type="transformer_overloaded", severity="critical",
+                equipment_1=eq.designation, equipment_2=None, page_number=eq.page_number,
+                description=f"Page {eq.page_number}: Transformer {eq.designation} ({kva}kVA, FLA={fla:.0f}A) feeds breakers totaling {total_amps}A — exceeds capacity.",
+                reference_code="NEC 450", recommendation="Verify transformer sizing. Check load diversity.",
+            ))
+    return findings
+
+
+def _check_voltage_consistency_per_device(equipment: list) -> list[CrossRefFinding]:
+    """Flag same equipment at different voltages on different pages."""
+    findings = []
+    from collections import defaultdict
+    by_desig = defaultdict(list)
+    for eq in equipment:
+        if not eq.voltage:
+            continue
+        v = re.search(r'(\d{3,5})', str(eq.voltage))
+        if v:
+            by_desig[eq.designation.upper()].append((int(v.group(1)), eq.page_number))
+    for desig, entries in by_desig.items():
+        voltages = set(v for v, _ in entries)
+        if len(voltages) > 1:
+            detail = ", ".join(f"{v}V (pg {p})" for v, p in entries)
+            findings.append(CrossRefFinding(
+                finding_type="voltage_inconsistency", severity="critical",
+                equipment_1=desig, equipment_2=None, page_number=entries[0][1],
+                description=f"Equipment {desig} at different voltages: {detail}.",
+                reference_code="Drawing Consistency", recommendation="Verify correct voltage.",
+            ))
+    return findings
+
+
+def _check_impedance_plausibility(equipment: list) -> list[CrossRefFinding]:
+    """Flag transformer impedance outside 2-12% range."""
+    findings = []
+    for eq in equipment:
+        if eq.equipment_type != "transformer" or not eq.impedance:
+            continue
+        try:
+            z = float(eq.impedance)
+        except (ValueError, TypeError):
+            continue
+        if z < 2.0 or z > 12.0:
+            issue = "unusually low — high secondary fault currents" if z < 2 else "unusually high — excessive voltage drop"
+            findings.append(CrossRefFinding(
+                finding_type="impedance_suspect", severity="major",
+                equipment_1=eq.designation, equipment_2=None, page_number=eq.page_number,
+                description=f"Page {eq.page_number}: {eq.designation} impedance {z}% is {issue} (typical 3-6%).",
+                reference_code="IEEE C57", recommendation="Verify impedance with manufacturer.",
+            ))
+    return findings
+
+
+def _check_pole_count_sanity(equipment: list) -> list[CrossRefFinding]:
+    """Flag breakers with invalid pole counts."""
+    findings = []
+    for eq in equipment:
+        if eq.equipment_type not in ("breaker", "circuit_breaker") or not eq.poles:
+            continue
+        try:
+            p = int(eq.poles)
+        except (ValueError, TypeError):
+            continue
+        if p not in (1, 2, 3, 4):
+            findings.append(CrossRefFinding(
+                finding_type="invalid_poles", severity="critical",
+                equipment_1=eq.designation, equipment_2=None, page_number=eq.page_number,
+                description=f"Page {eq.page_number}: {eq.designation} shows {p} poles. Only 1-4 pole breakers exist.",
+                reference_code="UL 489", recommendation="Verify pole count — data error.",
+            ))
+    return findings
+
+
+def _check_conductor_count_vs_breaker(equipment: list) -> list[CrossRefFinding]:
+    """Flag parallel runs that don't provide enough ampacity for their breaker."""
+    findings = []
+    cables = [e for e in equipment if e.equipment_type == "cable" and e.attributes]
+    breakers = [e for e in equipment if e.equipment_type in ("breaker", "circuit_breaker")]
+    for cable in cables:
+        runs = int(cable.attributes.get("runs", 1))
+        size_mm2 = cable.attributes.get("size_mm2")
+        if not size_mm2 or runs < 2:
+            continue
+        amp_per = mm2_ampacity(float(size_mm2))
+        total = amp_per * runs
+        for bkr in breakers:
+            if bkr.page_number != cable.page_number:
+                continue
+            trip = _parse_amps(bkr.trip_rating)
+            if not trip or total > trip * 3 or total < trip * 0.1:
+                continue
+            if total < trip * 0.8:
+                findings.append(CrossRefFinding(
+                    finding_type="conductor_count_inadequate", severity="critical",
+                    equipment_1=bkr.designation, equipment_2=cable.designation, page_number=cable.page_number,
+                    description=f"Page {cable.page_number}: {runs}x{size_mm2}mm² ({amp_per}A × {runs} = {total}A) for {bkr.designation} ({trip}A) — only {total/trip*100:.0f}% capacity.",
+                    reference_code="NEC 240.4, 310.16", recommendation=f"Increase conductor count or size for ≥{trip}A.",
+                ))
+    return findings
+
+
+def _check_sld_vs_cutsheet_coverage(equipment: list, pages: Optional[list]) -> list[CrossRefFinding]:
+    """Flag SLD equipment missing from cut sheets."""
+    findings = []
+    if not pages:
+        return findings
+    sld_models = set()
+    cs_models = set()
+    for eq in equipment:
+        src = eq.attributes.get("source_page_type", "")
+        model = (eq.model or eq.designation).upper().strip() if eq.model else eq.designation.upper().strip()
+        if src == "single_line_diagram" and len(model) > 3:
+            sld_models.add(model)
+        elif src == "cut_sheet" and len(model) > 3:
+            cs_models.add(model)
+    missing = [m for m in (sld_models - cs_models) if not m.startswith("BKR-")]
+    if len(missing) > 3:
+        findings.append(CrossRefFinding(
+            finding_type="missing_cutsheets", severity="major",
+            equipment_1="Multiple items", equipment_2=None, page_number=0,
+            description=f"{len(missing)} SLD equipment without cut sheets: {', '.join(list(missing)[:5])}",
+            reference_code="Submittal Requirements", recommendation="Provide cut sheets for all SLD equipment.",
+        ))
+    return findings
+
+
+def _check_cable_schedule_completeness(equipment: list, pages: Optional[list]) -> list[CrossRefFinding]:
+    """Flag incomplete cable schedule vs SLD feeders."""
+    findings = []
+    if not pages:
+        return findings
+    outgoing = sum(1 for e in equipment if e.attributes.get("source_page_type") == "single_line_diagram"
+                   and e.equipment_type == "breaker" and "outgoing" in (e.raw_text or "").lower())
+    cables = sum(1 for e in equipment if e.equipment_type == "cable")
+    if outgoing > 5 and cables > 0 and cables < outgoing * 0.5:
+        findings.append(CrossRefFinding(
+            finding_type="cable_schedule_incomplete", severity="major",
+            equipment_1="Cable Schedule", equipment_2=None, page_number=0,
+            description=f"SLD shows ~{outgoing} outgoing feeders but only {cables} cable entries. Schedule may be incomplete.",
+            reference_code="Submittal Requirements", recommendation="Verify cable schedule covers all feeders.",
+        ))
+    return findings
+
+
+def _check_revision_consistency(pages: Optional[list]) -> list[CrossRefFinding]:
+    """Flag multiple revision levels across pages."""
+    findings = []
+    if not pages:
+        return findings
+    revs = {}
+    for p in pages:
+        for m in re.finditer(r'rev\.?\s*([a-z0-9](?:\.\d)?)', p.get("text_lower", "")):
+            revs.setdefault(m.group(1).upper(), []).append(p["page"])
+    if len(revs) > 2:
+        summary = ", ".join(f"Rev {r}: {len(pgs)} pgs" for r, pgs in sorted(revs.items()))
+        findings.append(CrossRefFinding(
+            finding_type="revision_inconsistency", severity="major",
+            equipment_1="Document", equipment_2=None, page_number=0,
+            description=f"Multiple revision levels: {summary}.",
+            reference_code="Submittal Requirements", recommendation="Verify all pages at current revision.",
+        ))
+    return findings
+
+
+def _check_title_block_consistency(pages: Optional[list]) -> list[CrossRefFinding]:
+    """Flag inconsistent project names in title blocks."""
+    findings = []
+    if not pages:
+        return findings
+    names = {}
+    for p in pages:
+        for m in re.finditer(r'project\s*(?:name)?\s*[:=]\s*(.+?)(?:\n|$)', p.get("text_lower", "")):
+            n = m.group(1).strip()[:50]
+            if len(n) > 3:
+                names.setdefault(n, []).append(p["page"])
+    if len(names) > 2:
+        findings.append(CrossRefFinding(
+            finding_type="title_block_inconsistency", severity="minor",
+            equipment_1="Title Blocks", equipment_2=None, page_number=0,
+            description=f"Multiple project names: {', '.join(list(names.keys())[:4])}",
+            reference_code="Drawing Standards", recommendation="Verify all title blocks are correct.",
+        ))
+    return findings
+
+
+# ===========================================================================
+#  Helpers
+# ===========================================================================
+
+def _parse_amps(val) -> Optional[int]:
+    if not val:
+        return None
+    m = re.search(r'(\d+)', str(val))
+    return int(m.group(1)) if m else None
+
+
+def _parse_conductor_size(val) -> Optional[str]:
+    if not val:
+        return None
+    m = re.search(r'(\d+)\s*kcmil', str(val).lower())
+    if m:
+        return m.group(1)
+    m = re.search(r'#?(\d+/\d+)\s*awg', str(val).lower())
+    if m:
+        return m.group(1)
+    m = re.search(r'#?(\d{1,2})\s*(?:awg)?', str(val).lower())
+    if m:
+        return m.group(1)
+    return None
