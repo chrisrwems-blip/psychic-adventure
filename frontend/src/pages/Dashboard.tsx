@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { getProjects, createProject, getDashboard } from '../api/client';
 import type { Project, DashboardStats } from '../types';
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [projects, setProjects] = useState<Project[]>([]);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -42,6 +43,7 @@ export default function Dashboard() {
       gradient: 'from-blue-500 to-blue-600',
       bgLight: 'bg-blue-50 dark:bg-blue-900/30',
       textColor: 'text-blue-700 dark:text-blue-400',
+      link: null as string | null,
       icon: (
         <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
@@ -54,6 +56,7 @@ export default function Dashboard() {
       gradient: 'from-emerald-500 to-emerald-600',
       bgLight: 'bg-emerald-50 dark:bg-emerald-900/30',
       textColor: 'text-emerald-700 dark:text-emerald-400',
+      link: '/register',
       icon: (
         <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
@@ -66,6 +69,7 @@ export default function Dashboard() {
       gradient: 'from-amber-500 to-amber-600',
       bgLight: 'bg-amber-50 dark:bg-amber-900/30',
       textColor: 'text-amber-700 dark:text-amber-400',
+      link: '/register',
       icon: (
         <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -78,6 +82,7 @@ export default function Dashboard() {
       gradient: 'from-orange-500 to-orange-600',
       bgLight: 'bg-orange-50 dark:bg-orange-900/30',
       textColor: 'text-orange-700 dark:text-orange-400',
+      link: '/comments',
       icon: (
         <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" />
@@ -90,6 +95,7 @@ export default function Dashboard() {
       gradient: 'from-red-500 to-red-600',
       bgLight: 'bg-red-50 dark:bg-red-900/30',
       textColor: 'text-red-700 dark:text-red-400',
+      link: '/comments',
       icon: (
         <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
@@ -132,7 +138,8 @@ export default function Dashboard() {
           {statCards.map((s) => (
             <div
               key={s.label}
-              className="group relative bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-5 hover:shadow-lg hover:border-gray-300 dark:hover:border-slate-600 transition-all duration-200 overflow-hidden"
+              onClick={() => s.link && navigate(s.link)}
+              className={`group relative bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-5 hover:shadow-lg hover:border-gray-300 dark:hover:border-slate-600 transition-all duration-200 overflow-hidden ${s.link ? 'cursor-pointer' : ''}`}
             >
               {/* Gradient accent bar at top */}
               <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${s.gradient}`} />
