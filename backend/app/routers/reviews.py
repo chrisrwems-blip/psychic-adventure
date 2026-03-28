@@ -229,3 +229,13 @@ def check_vision():
     """Check if any vision backend (Ollama or Claude API) is available."""
     from app.services.vision_analyzer import is_vision_available
     return is_vision_available()
+
+
+@router.get("/nec-commentary/{code_ref:path}")
+def get_nec_commentary(code_ref: str):
+    """Get NEC code commentary for a specific reference."""
+    from app.services.nec_commentary import get_commentary
+    commentary = get_commentary(code_ref)
+    if not commentary:
+        return {"found": False, "code": code_ref}
+    return {"found": True, "code": code_ref, **commentary}
