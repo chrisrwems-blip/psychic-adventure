@@ -133,7 +133,12 @@ def build_exe():
         "--hidden-import", "app.routers.reviews",
         "--hidden-import", "app.routers.comments",
         "--hidden-import", "app.routers.emails",
+        "--hidden-import", "app.routers.register",
+        "--hidden-import", "app.routers.rfis",
+        "--hidden-import", "app.routers.feedback",
         "--hidden-import", "sqlalchemy.dialects.sqlite",
+        "--hidden-import", "aiofiles",
+        "--hidden-import", "multipart",
         "--icon", "NONE",
         "launcher.py",
     ], cwd=BACKEND, check=True)

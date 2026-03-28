@@ -3,15 +3,13 @@ const { spawn } = require('child_process');
 const path = require('path');
 const http = require('http');
 const treeKill = require('tree-kill');
+const { BACKEND_PORT, VITE_PORT, HEALTH_URL, BACKEND_EXE_NAME } = require('./lib/constants');
 
 const isDev = !app.isPackaged;
-const BACKEND_PORT = 8000;
-const VITE_PORT = 5173;
 
 let mainWindow = null;
 let backendProcess = null;
 
-// Single instance lock — prevent multiple windows
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
@@ -20,8 +18,8 @@ if (!gotLock) {
 function getBackendExecutable() {
   if (isDev) return null; // dev.js starts backend separately
   const name = process.platform === 'win32'
-    ? 'DC_Submittal_Review_Backend.exe'
-    : 'DC_Submittal_Review_Backend';
+    ? `${BACKEND_EXE_NAME}.exe`
+    : BACKEND_EXE_NAME;
   return path.join(process.resourcesPath, 'backend', name);
 }
 
@@ -56,8 +54,9 @@ function waitForBackend(maxRetries = 30, intervalMs = 1000) {
     const poll = () => {
       attempts++;
       const req = http.get(
-        `http://localhost:${BACKEND_PORT}/api/health`,
+        HEALTH_URL,
         (res) => {
+          res.resume(); // drain response to free socket
           if (res.statusCode === 200) {
             resolve();
           } else {
@@ -96,7 +95,6 @@ function createWindow() {
     },
   });
 
-  // Dev: load from Vite dev server. Prod: load from backend (serves static files).
   const url = isDev
     ? `http://localhost:${VITE_PORT}`
     : `http://localhost:${BACKEND_PORT}`;
@@ -122,8 +120,6 @@ function killBackend() {
   });
 }
 
-// --- App lifecycle ---
-
 app.on('ready', async () => {
   startBackend();
 
@@ -142,7 +138,6 @@ app.on('ready', async () => {
 });
 
 app.on('window-all-closed', () => {
-  killBackend();
   app.quit();
 });
 

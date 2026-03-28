@@ -14,10 +14,8 @@
 const { execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const { ROOT, BACKEND_DIR: BACKEND, FRONTEND_DIR: FRONTEND } = require('../lib/constants');
 
-const ROOT = path.resolve(__dirname, '..', '..');
-const BACKEND = path.join(ROOT, 'backend');
-const FRONTEND = path.join(ROOT, 'frontend');
 const DIST_BACKEND = path.join(ROOT, 'dist', 'backend');
 
 const isWindows = process.platform === 'win32';
@@ -36,9 +34,8 @@ step('Building frontend');
 run('npm install', { cwd: FRONTEND });
 run('npm run build', { cwd: FRONTEND });
 
-// Copy to backend/static
 const staticDir = path.join(BACKEND, 'static');
-if (fs.existsSync(staticDir)) fs.rmSync(staticDir, { recursive: true });
+fs.rmSync(staticDir, { recursive: true, force: true });
 fs.cpSync(path.join(FRONTEND, 'dist'), staticDir, { recursive: true });
 console.log(`  Frontend copied to ${staticDir}`);
 
@@ -76,7 +73,7 @@ if getattr(sys, "frozen", False):
 import uvicorn
 from app.production import app
 
-uvicorn.run(app, host="0.0.0.0", port=8000)
+uvicorn.run(app, host="127.0.0.1", port=8000)
 `;
 fs.writeFileSync(path.join(BACKEND, 'electron_launcher.py'), launcherPy);
 
@@ -120,7 +117,7 @@ run(pyinstallerCmd, { cwd: BACKEND });
 
 // Step 5: Move output to dist/backend
 step('Moving sidecar to dist/backend');
-if (fs.existsSync(DIST_BACKEND)) fs.rmSync(DIST_BACKEND, { recursive: true });
+fs.rmSync(DIST_BACKEND, { recursive: true, force: true });
 fs.cpSync(
   path.join(BACKEND, 'dist', 'DC_Submittal_Review_Backend'),
   DIST_BACKEND,
@@ -129,11 +126,9 @@ fs.cpSync(
 
 // Clean up PyInstaller artifacts in backend/
 for (const dir of ['build', 'dist']) {
-  const p = path.join(BACKEND, dir);
-  if (fs.existsSync(p)) fs.rmSync(p, { recursive: true });
+  fs.rmSync(path.join(BACKEND, dir), { recursive: true, force: true });
 }
-const specFile = path.join(BACKEND, 'DC_Submittal_Review_Backend.spec');
-if (fs.existsSync(specFile)) fs.unlinkSync(specFile);
+fs.rmSync(path.join(BACKEND, 'DC_Submittal_Review_Backend.spec'), { force: true });
 
 step('Backend sidecar built successfully');
 console.log(`  Output: ${DIST_BACKEND}`);
