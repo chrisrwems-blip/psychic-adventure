@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.models.database_models import Submittal, ReviewResult, ReviewComment, SubmittalStatus
 from app.review_engine.registry import get_checker
-from app.services.pdf_parser import extract_text_from_pdf, extract_metadata
+from app.services.pdf_parser import extract_text_from_pdf, extract_metadata, extract_text_by_page, extract_metadata_by_page
 
 
 def run_review(db: Session, submittal_id: int) -> dict:
@@ -17,9 +17,13 @@ def run_review(db: Session, submittal_id: int) -> dict:
     submittal.status = SubmittalStatus.REVIEWING
     db.commit()
 
-    # Extract text from PDF
-    pdf_text = extract_text_from_pdf(submittal.file_path)
-    metadata = extract_metadata(pdf_text)
+    # Extract text page-by-page
+    pages = extract_text_by_page(submittal.file_path)
+    pages = extract_metadata_by_page(pages)
+
+    # Also get full text for global metadata
+    full_text = "\n".join(p["text"] for p in pages)
+    global_metadata = extract_metadata(full_text)
 
     # Get appropriate checker and run
     try:
@@ -29,7 +33,8 @@ def run_review(db: Session, submittal_id: int) -> dict:
         db.commit()
         raise
 
-    findings = checker.run_checks(pdf_text, metadata)
+    # Run page-aware checks
+    findings = checker.run_checks_by_page(pages, global_metadata)
 
     # Clear old results
     db.query(ReviewResult).filter(ReviewResult.submittal_id == submittal_id).delete()
@@ -58,6 +63,7 @@ def run_review(db: Session, submittal_id: int) -> dict:
                 category="automated_review",
                 severity=finding.severity,
                 reference_code=finding.reference_standard,
+                page_number=finding.page_number,  # Now includes the actual page!
             )
             db.add(comment)
 
@@ -104,6 +110,7 @@ def run_review(db: Session, submittal_id: int) -> dict:
                 "details": f.details,
                 "severity": f.severity,
                 "reference": f.reference_standard,
+                "page_number": f.page_number,
             }
             for f in findings
         ],

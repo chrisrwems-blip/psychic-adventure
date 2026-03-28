@@ -1,6 +1,6 @@
 """PDF text extraction and basic data identification."""
 import re
-from pathlib import Path
+from typing import Optional
 
 
 def extract_text_from_pdf(file_path: str) -> str:
@@ -16,6 +16,28 @@ def extract_text_from_pdf(file_path: str) -> str:
         return "\n".join(text_parts)
     except Exception as e:
         return f"[PDF text extraction failed: {e}]"
+
+
+def extract_text_by_page(file_path: str) -> list[dict]:
+    """Extract text from each page separately.
+
+    Returns a list of dicts: [{"page": 1, "text": "...", "text_lower": "..."}, ...]
+    Page numbers are 1-indexed to match PDF page numbering.
+    """
+    try:
+        from PyPDF2 import PdfReader
+        reader = PdfReader(file_path)
+        pages = []
+        for i, page in enumerate(reader.pages):
+            text = page.extract_text() or ""
+            pages.append({
+                "page": i + 1,  # 1-indexed
+                "text": text,
+                "text_lower": text.lower(),
+            })
+        return pages
+    except Exception as e:
+        return [{"page": 1, "text": f"[PDF extraction failed: {e}]", "text_lower": ""}]
 
 
 def get_page_count(file_path: str) -> int:
@@ -75,3 +97,13 @@ def extract_metadata(text: str) -> dict:
         metadata["standards_referenced"] = list(set(standards))
 
     return metadata
+
+
+def extract_metadata_by_page(pages: list[dict]) -> list[dict]:
+    """Extract metadata for each page individually.
+
+    Takes output of extract_text_by_page, returns same list with 'metadata' added.
+    """
+    for page_data in pages:
+        page_data["metadata"] = extract_metadata(page_data["text"])
+    return pages
