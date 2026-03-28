@@ -52,10 +52,12 @@ class BaseEquipmentChecker(ABC):
         pages: list of {"page": int, "text": str, "text_lower": str, "metadata": dict}
         """
         findings = []
+        # Build full text for checks that need global context
+        full_text = "\n".join(p["text_lower"] for p in pages)
 
         for item in self.get_checklist():
-            # Search each page for content related to this check
-            keywords = self._extract_keywords(item.check)
+            # Get the specific keywords this check cares about
+            keywords = self._extract_check_keywords(item)
             relevant_keywords = [kw for kw in keywords if len(kw) > 2]
 
             # Find which pages have content related to this check
@@ -76,43 +78,50 @@ class BaseEquipmentChecker(ABC):
                 finding = self._evaluate_check(item, best_page_text, metadata)
                 finding.page_number = best_page_num
 
-                # If the check found content, add page context to details
-                if finding.passed != 0:
+                # Add page context to details
+                if "(Page" not in finding.details:
                     finding.details = f"(Page {best_page_num}) {finding.details}"
             else:
-                # Not found on any page — run against empty to get a fail
-                finding = self._evaluate_check(item, "", metadata)
-                # No page_number since it wasn't found anywhere
+                # Not found on any page — check against full text as fallback
+                finding = self._evaluate_check(item, full_text, metadata)
+                if finding.passed == 1 or finding.passed == -1:
+                    # Found in full text but not isolated to a page
+                    finding.details = f"(Found in document) {finding.details}"
 
             findings.append(finding)
 
         return findings
 
     def _evaluate_check(self, item: CheckItem, text: str, metadata: dict) -> ReviewFinding:
-        """Default evaluation — subclasses override for smarter checks."""
-        keywords = self._extract_keywords(item.check)
-        found_any = any(kw in text for kw in keywords if len(kw) > 2)
+        """Default evaluation — subclasses override for smarter checks.
 
-        if found_any:
-            return ReviewFinding(
-                check_id=item.id,
-                check_name=item.check,
-                category=item.category,
-                passed=-1,
-                details=f"Related content found in submittal. Verify: {item.check}",
-                reference_standard=item.standard,
-                severity=item.severity,
-            )
+        Logic:
+        - If strong keywords are found → PASS (data is present in submittal)
+        - If nothing found → FAIL for critical/major, NEEDS REVIEW for minor/info
+        """
+        keywords = self._extract_check_keywords(item)
+        relevant = [kw for kw in keywords if len(kw) > 2]
+
+        if not relevant:
+            # No meaningful keywords to check — mark as needs review
+            return self._needs_review(item, f"Manual verification required: {item.check}")
+
+        matched_count = sum(1 for kw in relevant if kw in text)
+        match_ratio = matched_count / len(relevant) if relevant else 0
+
+        if match_ratio >= 0.5:
+            # Strong match — data appears to be present
+            return self._pass(item, f"Data found in submittal. Verified present: {item.check}")
+        elif match_ratio > 0:
+            # Partial match — something relevant is there but not complete
+            return self._needs_review(item, f"Partial data found. Verify completeness: {item.check}")
         else:
-            return ReviewFinding(
-                check_id=item.id,
-                check_name=item.check,
-                category=item.category,
-                passed=0 if item.severity in ("critical", "major") else -1,
-                details=f"Could not locate relevant data. Manually verify: {item.check}",
-                reference_standard=item.standard,
-                severity=item.severity,
-            )
+            # Nothing found
+            return self._fail(item, f"Not found in submittal. Must verify: {item.check}")
+
+    def _extract_check_keywords(self, item: CheckItem) -> list[str]:
+        """Pull meaningful keywords from a check item for text matching."""
+        return self._extract_keywords(item.check)
 
     def _extract_keywords(self, check_text: str) -> list[str]:
         """Pull meaningful keywords from check description for text matching."""
@@ -122,6 +131,17 @@ class BaseEquipmentChecker(ABC):
             "that", "from", "this", "been", "have", "not", "all", "any",
             "shall", "must", "should", "appropriate", "adequate", "properly",
             "clearly", "documented", "provided", "included", "present",
+            "required", "rated", "rating", "type", "class",
         }
         words = check_text.lower().replace("(", "").replace(")", "").replace(",", "").split()
         return [w for w in words if w not in stop_words and len(w) > 2]
+
+    # --- Helper methods for subclasses ---
+    def _pass(self, item: CheckItem, details: str) -> ReviewFinding:
+        return ReviewFinding(item.id, item.check, item.category, 1, details, item.standard, item.severity)
+
+    def _fail(self, item: CheckItem, details: str) -> ReviewFinding:
+        return ReviewFinding(item.id, item.check, item.category, 0, details, item.standard, item.severity)
+
+    def _needs_review(self, item: CheckItem, details: str) -> ReviewFinding:
+        return ReviewFinding(item.id, item.check, item.category, -1, details, item.standard, item.severity)

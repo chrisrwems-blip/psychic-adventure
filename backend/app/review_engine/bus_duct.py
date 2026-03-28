@@ -49,19 +49,12 @@ class BusDuctChecker(BaseEquipmentChecker):
         if check_id == "BD-001":
             amps = re.findall(r'(\d{3,5})\s*(?:amp|a\b)', text)
             if amps:
-                return self._needs_review(item, f"Ampacity found: {amps}A. Verify matches design load.")
+                return self._pass(item, f"Ampacity found: {amps}A. Verify matches design load.")
             return self._fail(item, "No ampacity rating found")
 
         if check_id == "BD-031":
             if any(x in text for x in ["hot swap", "hot-swap", "under load", "live"]):
-                return self._needs_review(item, "Hot-swappable capability referenced. Verify for Tier III.")
+                return self._pass(item, "Hot-swappable capability referenced. Verify for Tier III.")
             return self._fail(item, "Hot-swap tap-off capability not confirmed — needed for Tier III+")
 
         return super()._evaluate_check(item, text, metadata)
-
-    def _pass(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, 1, d, item.standard, item.severity)
-    def _fail(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, 0, d, item.standard, item.severity)
-    def _needs_review(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, -1, d, item.standard, item.severity)

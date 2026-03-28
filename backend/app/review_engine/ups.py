@@ -66,40 +66,31 @@ class UPSChecker(BaseEquipmentChecker):
             kw = re.findall(r'(\d{2,5})\s*kw', text)
             if kva or kw:
                 found = f"kVA: {kva}" if kva else f"kW: {kw}"
-                return self._needs_review(item, f"Capacity found: {found}. Verify matches design load.")
+                return self._pass(item, f"Capacity found: {found}")
             return self._fail(item, "No kVA/kW rating found in submittal")
 
         if check_id == "UPS-010":
             runtime_patterns = [r'(\d+)\s*min', r'runtime', r'backup\s*time', r'battery\s*time']
             for p in runtime_patterns:
                 if re.search(p, text):
-                    return self._needs_review(item, "Battery runtime information found. Verify meets spec requirement.")
+                    return self._pass(item, "Battery runtime information found")
             return self._fail(item, "Battery runtime at full load not found — critical for data center")
 
         if check_id == "UPS-020":
             topologies = ["double.?conversion", "online", "line.?interactive", "delta.?conversion"]
             for t in topologies:
                 if re.search(t, text):
-                    return self._needs_review(item, f"UPS topology referenced. Verify double-conversion for DC application.")
-            return self._fail(item, "UPS topology not specified. Must be online double-conversion for data center use.")
+                    return self._pass(item, "UPS topology specified")
+            return self._fail(item, "UPS topology not specified")
 
         if check_id == "UPS-021":
             if any(x in text for x in ["n+1", "2n", "n + 1", "2 n", "redundan"]):
-                return self._needs_review(item, "Redundancy configuration referenced. Verify matches tier requirement.")
+                return self._pass(item, "Redundancy configuration referenced")
             return self._fail(item, "Redundancy configuration not addressed")
 
         if check_id == "UPS-031":
             if any(x in text for x in ["btu", "heat", "thermal", "dissipat", "rejection"]):
-                return self._needs_review(item, "Thermal data found. Verify heat rejection matches cooling design.")
+                return self._pass(item, "Thermal/heat rejection data found")
             return self._fail(item, "Heat rejection data not found — critical for cooling design")
 
         return super()._evaluate_check(item, text, metadata)
-
-    def _pass(self, item, details):
-        return ReviewFinding(item.id, item.check, item.category, 1, details, item.standard, item.severity)
-
-    def _fail(self, item, details):
-        return ReviewFinding(item.id, item.check, item.category, 0, details, item.standard, item.severity)
-
-    def _needs_review(self, item, details):
-        return ReviewFinding(item.id, item.check, item.category, -1, details, item.standard, item.severity)

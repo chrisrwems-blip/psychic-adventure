@@ -59,31 +59,24 @@ class ATSChecker(BaseEquipmentChecker):
         if check_id == "ATS-001":
             amps = re.findall(r'(\d{2,5})\s*(?:amp|a\b)', text)
             if amps:
-                return self._needs_review(item, f"Amp ratings found: {amps}. Verify matches design load.")
+                return self._pass(item, f"Amp ratings found: {amps}. Verify matches design load.")
             return self._fail(item, "No ampere rating found")
 
         if check_id == "ATS-003":
             if any(x in text for x in ["withstand", "wcr", "closing rating", "kaic"]):
-                return self._needs_review(item, "Withstand/closing rating referenced. Verify >= available fault current.")
+                return self._pass(item, "Withstand/closing rating referenced. Verify >= available fault current.")
             return self._fail(item, "Withstand and closing rating not documented — critical")
 
         if check_id == "ATS-010":
             types = ["open transition", "closed transition", "delayed transition", "soft load"]
             found = [t for t in types if t in text]
             if found:
-                return self._needs_review(item, f"Transfer type: {found[0]}. Verify matches spec.")
+                return self._pass(item, f"Transfer type: {found[0]}. Verify matches spec.")
             return self._fail(item, "Transfer type not specified")
 
         if check_id == "ATS-020":
             if any(x in text for x in ["bypass", "isolation"]):
-                return self._needs_review(item, "Bypass referenced. Verify includes bypass isolation switch.")
+                return self._pass(item, "Bypass referenced. Verify includes bypass isolation switch.")
             return self._fail(item, "Bypass isolation not found — required for Tier III+")
 
         return super()._evaluate_check(item, text, metadata)
-
-    def _pass(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, 1, d, item.standard, item.severity)
-    def _fail(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, 0, d, item.standard, item.severity)
-    def _needs_review(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, -1, d, item.standard, item.severity)

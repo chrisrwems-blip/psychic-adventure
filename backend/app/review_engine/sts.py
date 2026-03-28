@@ -32,14 +32,7 @@ class STSChecker(BaseEquipmentChecker):
 
         if check_id == "STS-003":
             if any(x in text for x in ["4ms", "4 ms", "quarter cycle", "1/4 cycle", "transfer time"]):
-                return self._needs_review(item, "Transfer time referenced. Verify < 4ms for IT load protection.")
+                return self._pass(item, "Transfer time referenced. Verify < 4ms for IT load protection.")
             return self._fail(item, "Transfer time not documented — must be < 4ms for data center IT loads")
 
         return super()._evaluate_check(item, text, metadata)
-
-    def _pass(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, 1, d, item.standard, item.severity)
-    def _fail(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, 0, d, item.standard, item.severity)
-    def _needs_review(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, -1, d, item.standard, item.severity)

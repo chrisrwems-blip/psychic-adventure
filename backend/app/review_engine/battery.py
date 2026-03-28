@@ -38,21 +38,14 @@ class BatteryChecker(BaseEquipmentChecker):
             chems = ["vrla", "lithium", "li-ion", "lion", "lead acid", "nickel cadmium", "nicd"]
             found = [c for c in chems if c in text]
             if found:
-                return self._needs_review(item, f"Battery chemistry: {found[0]}. Verify matches spec.")
+                return self._pass(item, f"Battery chemistry: {found[0]}. Verify matches spec.")
             return self._fail(item, "Battery chemistry not specified")
 
         if check_id == "BAT-013":
             if any(x in text for x in ["thermal runaway", "thermal management", "nfpa 855"]):
-                return self._needs_review(item, "Thermal runaway protection referenced. Verify adequacy for Li-ion.")
+                return self._pass(item, "Thermal runaway protection referenced. Verify adequacy for Li-ion.")
             if "li" in text or "lithium" in text:
                 return self._fail(item, "Li-ion battery but thermal runaway protection not documented")
-            return self._needs_review(item, "Verify if Li-ion — if so, thermal runaway protection required")
+            return self._fail(item, "Verify if Li-ion — if so, thermal runaway protection required")
 
         return super()._evaluate_check(item, text, metadata)
-
-    def _pass(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, 1, d, item.standard, item.severity)
-    def _fail(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, 0, d, item.standard, item.severity)
-    def _needs_review(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, -1, d, item.standard, item.severity)

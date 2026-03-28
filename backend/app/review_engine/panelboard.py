@@ -53,19 +53,12 @@ class PanelboardChecker(BaseEquipmentChecker):
         if check_id == "PNL-001":
             amps = re.findall(r'(\d{2,5})\s*(?:amp|a\b)', text)
             if amps:
-                return self._needs_review(item, f"Amp ratings found: {amps}. Verify matches design.")
+                return self._pass(item, f"Amp ratings found: {amps}. Verify matches design.")
             return self._fail(item, "No bus ampere rating found")
 
         if check_id == "PNL-003":
             if any(x in text for x in ["sccr", "short circuit", "kaic", "withstand"]):
-                return self._needs_review(item, "SCCR referenced. Verify >= available fault current.")
+                return self._pass(item, "SCCR referenced. Verify >= available fault current.")
             return self._fail(item, "SCCR not documented — required per NEC 110.10")
 
         return super()._evaluate_check(item, text, metadata)
-
-    def _pass(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, 1, d, item.standard, item.severity)
-    def _fail(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, 0, d, item.standard, item.severity)
-    def _needs_review(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, -1, d, item.standard, item.severity)

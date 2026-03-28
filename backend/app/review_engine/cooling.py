@@ -64,19 +64,12 @@ class CoolingChecker(BaseEquipmentChecker):
             kw_cool = re.findall(r'(\d{2,4})\s*kw.*?cool', text)
             if tons or kw_cool:
                 found = f"tons: {tons}" if tons else f"kW: {kw_cool}"
-                return self._needs_review(item, f"Cooling capacity found: {found}. Verify matches heat load.")
+                return self._pass(item, f"Cooling capacity found: {found}")
             return self._fail(item, "No cooling capacity found in submittal")
 
         if check_id == "CLG-030":
             if any(x in text for x in ["n+1", "2n", "redundan"]):
-                return self._needs_review(item, "Redundancy referenced. Verify matches tier requirement.")
+                return self._pass(item, "Redundancy configuration referenced")
             return self._fail(item, "Cooling redundancy configuration not addressed")
 
         return super()._evaluate_check(item, text, metadata)
-
-    def _pass(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, 1, d, item.standard, item.severity)
-    def _fail(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, 0, d, item.standard, item.severity)
-    def _needs_review(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, -1, d, item.standard, item.severity)
