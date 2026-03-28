@@ -348,18 +348,37 @@ def _check_fault_current_coordination(equipment: list, topology: SystemTopology)
         if not node.interrupting_kA or not node.available_fault_current_kA:
             continue
 
-        if node.interrupting_kA < node.available_fault_current_kA:
+        afc = node.available_fault_current_kA
+        icu = node.interrupting_kA
+
+        if icu < afc:
+            # Determine severity based on margin
+            margin = afc - icu
+            if margin > 20:
+                sev = "critical"
+                desc_prefix = "LIKELY INADEQUATE"
+            elif margin > 5:
+                sev = "major"
+                desc_prefix = "POTENTIALLY INADEQUATE"
+            else:
+                sev = "minor"
+                desc_prefix = "MARGINAL"
+
             findings.append(CrossRefFinding(
-                finding_type="interrupting_inadequate", severity="critical",
+                finding_type="interrupting_inadequate", severity=sev,
                 equipment_1=node.equipment_id, equipment_2=None,
                 page_number=node.page_number,
                 description=(
-                    f"Page {node.page_number}: Breaker {node.equipment_id} has {node.interrupting_kA}kA "
-                    f"interrupting rating but available fault current at this point is estimated at "
-                    f"{node.available_fault_current_kA:.0f}kA. Device must be rated for available fault current."
+                    f"Page {node.page_number}: {desc_prefix} — Breaker {node.equipment_id} "
+                    f"rated {icu}kA interrupting capacity. Estimated available fault current at "
+                    f"this point is ~{afc:.0f}kA (based on infinite bus utility assumption + generator "
+                    f"contribution). Verify with actual fault current study per NEC 110.9."
                 ),
                 reference_code="NEC 110.9",
-                recommendation=f"Replace with breaker rated ≥{node.available_fault_current_kA:.0f}kA or add current-limiting device upstream.",
+                recommendation=(
+                    f"Obtain actual fault current study. If AFC exceeds {icu}kA, replace with "
+                    f"breaker rated ≥ AFC or add current-limiting device upstream."
+                ),
             ))
 
     return findings
