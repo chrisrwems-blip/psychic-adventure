@@ -54,6 +54,25 @@ export default function SubmittalReview() {
       setComments(comRes.data);
       setEmails(emRes.data);
       if (subRes.data.annotated_file_path) setHasAnnotated(true);
+
+      // Build summary from loaded results if we don't already have one
+      const res = resRes.data;
+      if (res.length > 0 && !reviewSummary) {
+        const passed = res.filter((r: any) => r.passed === 1).length;
+        const failed = res.filter((r: any) => r.passed === 0).length;
+        const needsReview = res.filter((r: any) => r.passed === -1).length;
+        const openComments = comRes.data.filter((c: any) => c.status === 'open').length;
+        setReviewSummary({
+          total_checks: res.length,
+          passed,
+          failed,
+          needs_review: needsReview,
+          critical_issues: comRes.data.filter((c: any) => c.severity === 'critical' && c.status === 'open').length,
+          major_issues: comRes.data.filter((c: any) => c.severity === 'major' && c.status === 'open').length,
+          comments_generated: openComments,
+          recommendation: failed > 0 ? 'Review has findings — see details below' : 'No failures found',
+        });
+      }
     } catch (e) {
       console.error('Failed to load', e);
     }
