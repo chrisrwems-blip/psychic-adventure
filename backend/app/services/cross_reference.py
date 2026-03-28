@@ -83,6 +83,11 @@ def run_cross_reference(
     findings.extend(_check_abb_product_validity(equipment))
     findings.extend(_check_metric_cable_sizing(equipment))
 
+    # --- Document-level checks ---
+    findings.extend(_check_ul_listing_per_cutsheet(pages))
+    findings.extend(_check_missing_drawing_views(pages))
+    findings.extend(_check_fuse_schedule(pages))
+
     return findings
 
 
@@ -721,7 +726,188 @@ def _parse_amps(val) -> Optional[int]:
     return int(m.group(1)) if m else None
 
 
-def _parse_conductor_size(val) -> Optional[str]:
+# ---------------------------------------------------------------------------
+# 18. Per-Page UL Listing Scan — NEW
+# ---------------------------------------------------------------------------
+
+def _check_ul_listing_per_cutsheet(pages: Optional[list]) -> list[CrossRefFinding]:
+    """Scan each cut sheet page for UL vs IEC certification.
+
+    In NEC jurisdiction (480V/60Hz), every piece of equipment must be UL listed.
+    Flag cut sheet pages that reference IEC/CE but not UL.
+    """
+    if not pages:
+        return []
+
+    findings = []
+    cut_sheets = [p for p in pages if p.get("page_type") == "cut_sheet"]
+
+    for page_data in cut_sheets:
+        text_lower = page_data.get("text_lower", "")
+        page_num = page_data["page"]
+
+        if len(text_lower) < 50:
+            continue
+
+        has_ul = any(kw in text_lower for kw in [
+            "ul listed", "ul recognized", "ul file", "ul 489", "ul 891",
+            "ul 67", "ul 1558", "ul 508", "ul 1449", "ul 1778", "ul 1008",
+            "ul listed", "culus", "c-ul",
+        ])
+        has_iec_only = any(kw in text_lower for kw in [
+            "iec 61439", "iec 60947", "iec 60898", "iec 61009",
+            "ce marking", "ce mark", "ce conformity",
+        ])
+
+        # Only flag if IEC is present but UL is NOT
+        if has_iec_only and not has_ul:
+            # Try to identify what product this is
+            product_hint = ""
+            for kw in ["circuit breaker", "switchgear", "panelboard", "transformer",
+                        "fuse", "contactor", "relay", "power supply", "surge"]:
+                if kw in text_lower:
+                    product_hint = kw
+                    break
+
+            findings.append(CrossRefFinding(
+                finding_type="iec_only_cutsheet",
+                severity="critical",
+                equipment_1=f"Cut Sheet pg {page_num}" + (f" ({product_hint})" if product_hint else ""),
+                equipment_2=None,
+                page_number=page_num,
+                description=(
+                    f"Page {page_num}: Cut sheet references IEC certification but no UL listing found. "
+                    f"For 480V/60Hz NEC jurisdiction, equipment must be UL listed or recognized. "
+                    f"IEC-only certification is not acceptable per NEC 110.2 and 110.3(B)."
+                ),
+                reference_code="NEC 110.2, 110.3(B)",
+                recommendation="Verify UL listing exists for this equipment. Request UL file number from vendor.",
+            ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# 19. Missing Drawing Views — NEW
+# ---------------------------------------------------------------------------
+
+def _check_missing_drawing_views(pages: Optional[list]) -> list[CrossRefFinding]:
+    """Check that switchgear submittals include required drawing views.
+
+    Switchgear submittals should include:
+    - Front view / front elevation
+    - Rear view / rear elevation
+    - Side view / side elevation
+    - Bottom view / bottom plan (critical for cable entry cutouts)
+    - Plan view / top view (for overall footprint)
+    """
+    if not pages:
+        return []
+
+    findings = []
+    full_text = "\n".join(p.get("text_lower", "") for p in pages)
+
+    # Only check if this appears to be a switchgear/panel submittal
+    is_switchgear = any(kw in full_text for kw in [
+        "switchgear", "switchboard", "distribution board", "mdb", "mcc",
+        "panelboard", "cubicle",
+    ])
+    if not is_switchgear:
+        return findings
+
+    views_found = {
+        "front": any(kw in full_text for kw in ["front view", "front elevation", "front of"]),
+        "rear": any(kw in full_text for kw in ["rear view", "rear elevation", "back view"]),
+        "side": any(kw in full_text for kw in ["side view", "side elevation", "end view"]),
+        "bottom": any(kw in full_text for kw in ["bottom view", "bottom plan", "underside", "cable entry"]),
+    }
+
+    if not views_found["bottom"]:
+        findings.append(CrossRefFinding(
+            finding_type="missing_view",
+            severity="major",
+            equipment_1="Switchgear Drawings",
+            equipment_2=None,
+            page_number=0,
+            description=(
+                "No bottom view / cable entry detail found in submittal. "
+                "Bottom view is required to verify cable entry cutout locations, "
+                "sizing, and routing for incoming and outgoing cables."
+            ),
+            reference_code="Submittal Requirements",
+            recommendation="Request bottom view showing cable entry cutouts and gland plate details.",
+        ))
+
+    if not views_found["rear"]:
+        findings.append(CrossRefFinding(
+            finding_type="missing_view",
+            severity="minor",
+            equipment_1="Switchgear Drawings",
+            equipment_2=None,
+            page_number=0,
+            description="No rear view / rear elevation found in submittal.",
+            reference_code="Submittal Requirements",
+            recommendation="Request rear view showing rear access provisions and cable compartment.",
+        ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# 20. Fuse Schedule Detection — NEW
+# ---------------------------------------------------------------------------
+
+def _check_fuse_schedule(pages: Optional[list]) -> list[CrossRefFinding]:
+    """If fuses are referenced in the submittal, verify a fuse schedule exists."""
+    if not pages:
+        return []
+
+    findings = []
+    full_text = "\n".join(p.get("text_lower", "") for p in pages)
+
+    # Check if fuses are referenced
+    fuse_keywords = ["fuse", "hrc", " gr ", " gg ", "fuse link", "fuse holder",
+                      "fuse base", "fuse carrier"]
+    has_fuses = any(kw in full_text for kw in fuse_keywords)
+
+    if not has_fuses:
+        return findings
+
+    # Check if a fuse schedule exists
+    fuse_schedule_keywords = ["fuse schedule", "fuse size", "fuse rating",
+                               "fuse type", "fuse coordination"]
+    has_fuse_schedule = any(kw in full_text for kw in fuse_schedule_keywords)
+
+    if not has_fuse_schedule:
+        # Find which pages reference fuses
+        fuse_pages = []
+        for p in pages:
+            if any(kw in p.get("text_lower", "") for kw in fuse_keywords):
+                fuse_pages.append(p["page"])
+
+        findings.append(CrossRefFinding(
+            finding_type="missing_fuse_schedule",
+            severity="major",
+            equipment_1="Fuse Schedule",
+            equipment_2=None,
+            page_number=fuse_pages[0] if fuse_pages else 0,
+            description=(
+                f"Fuses referenced in submittal (pages: {', '.join(str(p) for p in fuse_pages[:5])}) "
+                f"but no fuse schedule found. A fuse schedule detailing size, type, and rating "
+                f"of each fuse is required for coordination and maintenance."
+            ),
+            reference_code="Submittal Requirements",
+            recommendation="Provide fuse schedule with size, type (gG/gR/aR), voltage rating, and interrupting rating for each fuse.",
+        ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+#  Helpers
+# ---------------------------------------------------------------------------
+
+def _parse_amps(val) -> Optional[int]:
     if not val:
         return None
     m = re.search(r'(\d+)\s*kcmil', str(val).lower())
