@@ -4,6 +4,7 @@ import {
   getSubmittal, runReview, getReviewResults, getComments,
   addComment, updateComment, generateEmail, getEmails,
   getSubmittalPdfUrl, annotateSubmittal, getAnnotatedPdfUrl, getAnnotatedPdfDownloadUrl,
+  getReportUrl, compareRevision,
 } from '../api/client';
 import type { Submittal, ReviewResult, ReviewComment, GeneratedEmail } from '../types';
 
@@ -234,8 +235,42 @@ export default function SubmittalReview() {
           >
             {annotating ? 'Marking Up...' : 'Mark Up PDF'}
           </button>
+          <a
+            href={getReportUrl(Number(submittalId))}
+            className="px-6 py-2.5 bg-slate-700 text-white rounded-lg font-medium hover:bg-slate-800 inline-flex items-center"
+          >
+            Download Report
+          </a>
         </div>
       </div>
+
+      {/* Revision Comparison */}
+      <details className="bg-white rounded-lg shadow">
+        <summary className="px-4 py-3 cursor-pointer font-medium text-sm text-blue-600 hover:underline">
+          Compare with Revision (upload Rev B)
+        </summary>
+        <div className="px-4 pb-4">
+          <form onSubmit={async (e) => {
+            e.preventDefault();
+            const input = (e.currentTarget.querySelector('input[type=file]') as HTMLInputElement);
+            if (!input.files?.[0]) return;
+            const fd = new FormData();
+            fd.append('file', input.files[0]);
+            try {
+              const res = await compareRevision(Number(submittalId), fd);
+              alert(`Comparison complete: ${res.data.summary?.total_changes || 0} changes found. Check console for details.`);
+              console.log('Revision comparison:', res.data);
+            } catch (err) {
+              console.error('Comparison failed', err);
+            }
+          }} className="flex gap-3 items-center mt-2">
+            <input type="file" accept=".pdf" className="text-sm" />
+            <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">
+              Compare
+            </button>
+          </form>
+        </div>
+      </details>
 
       {/* Review Summary */}
       {reviewSummary && (
