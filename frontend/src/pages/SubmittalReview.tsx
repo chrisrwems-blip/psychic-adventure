@@ -30,6 +30,7 @@ export default function SubmittalReview() {
   const [reviewing, setReviewing] = useState(false);
   const [annotating, setAnnotating] = useState(false);
   const [hasAnnotated, setHasAnnotated] = useState(false);
+  const [summaryPageCount, setSummaryPageCount] = useState(0);
   const [viewingMarkup, setViewingMarkup] = useState(false);
   const [reviewSummary, setReviewSummary] = useState<any>(null);
   const [newComment, setNewComment] = useState({ comment_text: '', severity: 'info', reference_code: '' });
@@ -95,8 +96,9 @@ export default function SubmittalReview() {
   const handleAnnotate = async () => {
     setAnnotating(true);
     try {
-      await annotateSubmittal(Number(submittalId));
+      const res = await annotateSubmittal(Number(submittalId));
       setHasAnnotated(true);
+      setSummaryPageCount(res.data.summary_page_count || 0);
       setViewingMarkup(true);
       setActiveTab('pdf');
       loadData();
@@ -399,17 +401,24 @@ export default function SubmittalReview() {
                             </div>
                           )}
 
-                          {/* Page link — always opens original PDF, not marked-up */}
+                          {/* Page link — jumps to marked-up PDF with correct offset */}
                           {pageNum && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setViewingMarkup(false); // Switch to original PDF
+                                if (hasAnnotated) {
+                                  setViewingMarkup(true);
+                                }
                                 setActiveTab('pdf');
                                 setTimeout(() => {
                                   const iframe = document.querySelector('iframe[title]') as HTMLIFrameElement;
                                   if (iframe) {
-                                    iframe.src = getSubmittalPdfUrl(Number(submittalId)) + '#page=' + pageNum;
+                                    // Offset page number by summary pages in marked-up PDF
+                                    const adjustedPage = hasAnnotated ? pageNum + summaryPageCount : pageNum;
+                                    const baseUrl = hasAnnotated
+                                      ? getAnnotatedPdfUrl(Number(submittalId))
+                                      : getSubmittalPdfUrl(Number(submittalId));
+                                    iframe.src = baseUrl + '#page=' + adjustedPage;
                                   }
                                 }, 200);
                               }}
