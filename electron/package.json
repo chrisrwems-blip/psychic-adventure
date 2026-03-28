@@ -1,7 +1,7 @@
 {
-  "name": "dc-submittal-review-electron",
+  "name": "arclight",
   "version": "1.0.0",
-  "description": "DC Submittal Review Platform - Desktop App",
+  "description": "ArcLight - Data Center Submittal Review Platform",
   "main": "main.js",
   "private": true,
   "scripts": {
@@ -18,8 +18,8 @@
     "wait-on": "^8.0.0"
   },
   "build": {
-    "appId": "com.armada.dc-submittal-review",
-    "productName": "DC Submittal Review",
+    "appId": "com.armada.arclight",
+    "productName": "ArcLight",
     "directories": {
       "output": "../dist/electron"
     },
