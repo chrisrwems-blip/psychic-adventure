@@ -1,12 +1,13 @@
 """Smart full submittal package review — deduplicates, filters irrelevant checks, groups by issue.
 
 Design principles:
-1. Check the FULL document before declaring something missing
-2. One finding per issue, not one per page
-3. No spec-dependent checks unless a spec is uploaded
-4. No inapplicable checks (e.g., AFCI/GFCI in data center)
-5. Focus on: NEC code compliance, life safety, constructability, actual mistakes
-6. Cap output to actionable items only
+1. Run the checklist for EVERY equipment type discovered in the document
+2. Check the FULL document before declaring something missing
+3. One finding per check per equipment type (not per page or per item)
+4. No spec-dependent checks unless a spec is uploaded
+5. No inapplicable checks (e.g., AFCI/GFCI in data center)
+6. Focus on: NEC code compliance, life safety, constructability, actual mistakes
+7. Comments only for actionable critical/major items
 """
 from datetime import datetime, timezone
 from collections import defaultdict
@@ -48,9 +49,67 @@ SPEC_DEPENDENT_CHECK_IDS = {
 SKIP_PAGE_TYPES = {
     PageType.COVER_SHEET,
     PageType.TABLE_OF_CONTENTS,
-    PageType.GENERAL_NOTES,
-    PageType.UNKNOWN,
 }
+
+# Map extracted equipment types to checker types
+EQUIPMENT_TO_CHECKER = {
+    "transformer": "transformer",
+    "breaker": "switchgear",
+    "circuit_breaker": "panelboard",
+    "panel": "panelboard",
+    "cable": "cable",
+    "generator": "generator",
+    "ups": "ups",
+    "ats": "ats",
+    "pdu": "pdu",
+    "motor": "switchgear",
+}
+
+
+def _run_checker_against_full_doc(checker, pages, global_metadata, has_spec):
+    """Run a single checker's full checklist against the entire document.
+
+    Each check searches every page for relevance, uses the best-matching page,
+    and falls back to full-text. Returns one finding per check item.
+    """
+    findings = []
+    checklist = checker.get_checklist()
+    full_text_lower = "\n".join(p["text_lower"] for p in pages)
+
+    for item in checklist:
+        if item.id in DC_IRRELEVANT_CHECK_IDS:
+            continue
+        if item.id in SPEC_DEPENDENT_CHECK_IDS and not has_spec:
+            continue
+
+        keywords = checker._extract_keywords(item.check)
+        relevant = [kw for kw in keywords if len(kw) > 2]
+
+        # Find which page has the most relevant content
+        best_page = None
+        best_score = 0
+        for page_data in pages:
+            if page_data.get("page_type") in SKIP_PAGE_TYPES:
+                continue
+            score = sum(1 for kw in relevant if kw in page_data["text_lower"])
+            if score > best_score:
+                best_score = score
+                best_page = page_data
+
+        if best_page and best_score > 0:
+            finding = checker._evaluate_check(item, best_page["text_lower"], global_metadata)
+            finding.page_number = best_page["page"]
+            if finding.passed != 0 and "(Page" not in finding.details:
+                finding.details = f"(Page {best_page['page']}) {finding.details}"
+        else:
+            # Fallback: check full document text
+            finding = checker._evaluate_check(item, full_text_lower, global_metadata)
+            if finding.passed == 1 and "(Found" not in finding.details:
+                finding.details = f"(Found in document) {finding.details}"
+
+        findings.append(finding)
+
+    return findings
 
 
 def run_full_review(db: Session, submittal_id: int, has_spec: bool = False) -> dict:
@@ -69,91 +128,56 @@ def run_full_review(db: Session, submittal_id: int, has_spec: bool = False) -> d
     page_summary = get_page_summary(pages)
 
     full_text = "\n".join(p["text"] for p in pages)
-    full_text_lower = full_text.lower()
     global_metadata = extract_metadata(full_text)
 
     # --- Step 2: Extract all equipment ---
     all_equipment = extract_all_equipment(pages)
 
-    # --- Step 3: Run the main equipment type checker ONCE against full doc ---
-    # This catches document-level issues (is voltage specified ANYWHERE?)
-    main_findings = []
-    try:
-        main_checker = get_checker(submittal.equipment_type)
-        checklist = main_checker.get_checklist()
+    # --- Step 3: Determine which checker types to run ---
+    # Always run the user-selected type
+    checker_types_to_run = {submittal.equipment_type}
 
-        for item in checklist:
-            # Skip irrelevant and spec-dependent checks
-            if item.id in DC_IRRELEVANT_CHECK_IDS:
-                continue
-            if item.id in SPEC_DEPENDENT_CHECK_IDS and not has_spec:
-                continue
+    # Also run checkers for every equipment type discovered in the document
+    for eq in all_equipment:
+        mapped = EQUIPMENT_TO_CHECKER.get(eq.equipment_type)
+        if mapped and mapped in CHECKER_REGISTRY:
+            checker_types_to_run.add(mapped)
 
-            # Search the FULL document for this check's keywords
-            keywords = main_checker._extract_keywords(item.check)
-            relevant = [kw for kw in keywords if len(kw) > 2]
+    # --- Step 4: Run each checker type ONCE against the full document ---
+    all_findings = []
+    checkers_run = []
 
-            # Find which pages have the most relevant content
-            best_page = None
-            best_score = 0
-            for page_data in pages:
-                if page_data.get("page_type") in SKIP_PAGE_TYPES:
-                    continue
-                score = sum(1 for kw in relevant if kw in page_data["text_lower"])
-                if score > best_score:
-                    best_score = score
-                    best_page = page_data
+    for checker_type in sorted(checker_types_to_run):
+        try:
+            checker = get_checker(checker_type)
+        except ValueError:
+            continue
 
-            if best_page and best_score > 0:
-                # Found relevant content — run check against that page
-                finding = main_checker._evaluate_check(item, best_page["text_lower"], global_metadata)
-                finding.page_number = best_page["page"]
-                if finding.passed == 1:
-                    finding.details = f"(Page {best_page['page']}) {finding.details}"
-            else:
-                # Also check full text as fallback — maybe it's spread across pages
-                finding = main_checker._evaluate_check(item, full_text_lower, global_metadata)
-                if finding.passed == 1:
-                    finding.details = f"(Found in document) {finding.details}"
+        findings = _run_checker_against_full_doc(checker, pages, global_metadata, has_spec)
+        all_findings.extend(findings)
+        checkers_run.append(checker_type)
 
-            main_findings.append(finding)
-
-    except ValueError:
-        pass
-
-    # --- Step 4: Cross-reference equipment ---
+    # --- Step 5: Cross-reference equipment ---
     cross_ref_findings = run_cross_reference(all_equipment)
 
-    # --- Step 5: Smart deduplication and grouping ---
-    # Group findings by check_id — one finding per unique check
-    # (the main checker already runs once per check against the full doc, so this is clean)
-
-    # For cross-ref findings, deduplicate by description similarity
+    # Deduplicate cross-ref by core issue
     seen_xref = set()
     unique_xref = []
     for xref in cross_ref_findings:
-        # Create a dedup key from the core issue
         key = (xref.finding_type, xref.equipment_1, xref.severity)
         if key not in seen_xref:
             seen_xref.add(key)
             unique_xref.append(xref)
     cross_ref_findings = unique_xref
 
-    # --- Step 6: Only create comments for actionable items ---
-    # PASS = no comment needed
-    # FAIL on critical/major = comment
-    # NEEDS_REVIEW on critical = comment
-    # Everything else = result only (visible in review tab but not cluttering comments)
-
-    # Clear old results
+    # --- Step 6: Save to database ---
     db.query(ReviewResult).filter(ReviewResult.submittal_id == submittal_id).delete()
     db.query(ReviewComment).filter(
         ReviewComment.submittal_id == submittal_id,
         ReviewComment.category == "automated_review"
     ).delete()
 
-    # Save checklist findings
-    for finding in main_findings:
+    for finding in all_findings:
         result = ReviewResult(
             submittal_id=submittal_id,
             check_name=finding.check_name,
@@ -164,7 +188,7 @@ def run_full_review(db: Session, submittal_id: int, has_spec: bool = False) -> d
         )
         db.add(result)
 
-        # Only create comments for real actionable issues
+        # Comments only for actionable issues
         should_comment = (
             (finding.passed == 0 and finding.severity in ("critical", "major"))
             or (finding.passed == -1 and finding.severity == "critical")
@@ -180,7 +204,6 @@ def run_full_review(db: Session, submittal_id: int, has_spec: bool = False) -> d
             )
             db.add(comment)
 
-    # Save cross-reference findings
     for xref in cross_ref_findings:
         result = ReviewResult(
             submittal_id=submittal_id,
@@ -203,32 +226,30 @@ def run_full_review(db: Session, submittal_id: int, has_spec: bool = False) -> d
             )
             db.add(comment)
 
-    # Update status
     submittal.status = SubmittalStatus.REVIEWED
     submittal.reviewed_at = datetime.now(timezone.utc)
     db.commit()
 
     # --- Build summary ---
-    total_checks = len(main_findings) + len(cross_ref_findings)
-    passed = sum(1 for f in main_findings if f.passed == 1)
+    total_checks = len(all_findings) + len(cross_ref_findings)
+    passed = sum(1 for f in all_findings if f.passed == 1)
     failed = (
-        sum(1 for f in main_findings if f.passed == 0)
+        sum(1 for f in all_findings if f.passed == 0)
         + sum(1 for x in cross_ref_findings if x.severity in ("critical", "major"))
     )
     needs_review = (
-        sum(1 for f in main_findings if f.passed == -1)
+        sum(1 for f in all_findings if f.passed == -1)
         + sum(1 for x in cross_ref_findings if x.severity not in ("critical", "major"))
     )
     critical = (
-        sum(1 for f in main_findings if f.passed != 1 and f.severity == "critical")
+        sum(1 for f in all_findings if f.passed != 1 and f.severity == "critical")
         + sum(1 for x in cross_ref_findings if x.severity == "critical")
     )
     major = (
-        sum(1 for f in main_findings if f.passed != 1 and f.severity == "major")
+        sum(1 for f in all_findings if f.passed != 1 and f.severity == "major")
         + sum(1 for x in cross_ref_findings if x.severity == "major")
     )
 
-    # Count actual comments generated (not total checks)
     comment_count = db.query(ReviewComment).filter(
         ReviewComment.submittal_id == submittal_id,
         ReviewComment.category == "automated_review"
@@ -251,6 +272,7 @@ def run_full_review(db: Session, submittal_id: int, has_spec: bool = False) -> d
         "review_type": "full_package",
         "total_pages": len(pages),
         "page_breakdown": page_summary,
+        "checkers_run": checkers_run,
         "equipment_found": [
             {
                 "type": eq.equipment_type,
