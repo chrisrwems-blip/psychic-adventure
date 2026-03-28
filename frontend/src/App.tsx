@@ -1,4 +1,5 @@
 import { Routes, Route, Link, useLocation } from 'react-router-dom';
+import { useTheme } from './contexts/ThemeContext';
 import Dashboard from './pages/Dashboard';
 import ProjectDetail from './pages/ProjectDetail';
 import SubmittalReview from './pages/SubmittalReview';
@@ -15,9 +16,10 @@ const navItems = [
 
 export default function App() {
   const location = useLocation();
+  const { theme, toggleTheme } = useTheme();
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 transition-colors">
       {/* Header */}
       <header className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white shadow-xl border-b border-slate-700">
         <div className="max-w-[1400px] mx-auto px-6 py-0 flex items-center justify-between">
@@ -51,6 +53,21 @@ export default function App() {
                 {item.label}
               </Link>
             ))}
+            <button
+              onClick={toggleTheme}
+              className="ml-3 p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+              title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              {theme === 'dark' ? (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
+                </svg>
+              )}
+            </button>
           </nav>
         </div>
       </header>
@@ -68,8 +85,8 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-200 bg-white mt-auto">
-        <div className="max-w-[1400px] mx-auto px-6 py-4 flex items-center justify-between text-xs text-slate-400">
+      <footer className="border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mt-auto">
+        <div className="max-w-[1400px] mx-auto px-6 py-4 flex items-center justify-between text-xs text-slate-400 dark:text-slate-500">
           <span>DC Submittal Review Platform</span>
           <span>NEC 2023 / NFPA 70 / IEEE / UL</span>
         </div>
