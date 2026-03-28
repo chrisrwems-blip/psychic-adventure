@@ -49,32 +49,67 @@ NEC_310_16_75C_AL = {
 # Metric (mm²) to AWG/kcmil Conversion
 # =============================================================================
 
-# IEC standard sizes to nearest NEC equivalent
-MM2_TO_AWG = {
-    0.5: "20", 0.75: "18", 1.0: "18", 1.5: "16", 2.5: "14",
-    4: "12", 6: "10", 10: "8", 16: "6", 25: "4", 35: "2",
-    50: "1/0", 70: "2/0", 95: "3/0", 120: "4/0",
-    150: "300", 185: "350", 240: "500", 300: "600",
-    400: "750", 500: "1000",
+# =============================================================================
+# IEC 60364-5-52 — Ampacity for Metric Cables (Copper, PVC insulated)
+# Installation method C (clipped direct to wall/tray) at 30°C ambient
+# These are the ACTUAL IEC ratings — no conversion to AWG needed.
+# =============================================================================
+
+IEC_AMPACITY_3PHASE = {
+    # mm² : amps (3-core cable or 3 single-core in trefoil, copper, PVC, 30°C)
+    1.5: 15, 2.5: 21, 4: 28, 6: 36, 10: 50, 16: 66, 25: 84,
+    35: 104, 50: 125, 70: 160, 95: 194, 120: 225, 150: 260,
+    185: 297, 240: 346, 300: 394, 400: 456, 500: 528, 630: 612,
 }
 
-# Reverse lookup: AWG to approximate mm²
-AWG_TO_MM2 = {v: k for k, v in MM2_TO_AWG.items()}
+IEC_AMPACITY_XLPE_3PHASE = {
+    # mm² : amps (3-core or trefoil, copper, XLPE/EPR, 30°C)
+    1.5: 19, 2.5: 27, 4: 36, 6: 46, 10: 65, 16: 87, 25: 114,
+    35: 141, 50: 182, 70: 226, 95: 275, 120: 321, 150: 372,
+    185: 427, 240: 500, 300: 576, 400: 662, 500: 764, 630: 885,
+}
+
+# NOTE: mm² to AWG/kcmil is an APPROXIMATION — these are NOT exact equivalents.
+# 300mm² ≈ 592 kcmil (NOT 600 kcmil). Using this for NEC ampacity lookup is
+# DANGEROUS because the actual cross-section differs. Only use for display/reference.
+# For NEC compliance, the actual conductor properties must be verified.
+MM2_APPROXIMATE_AWG_LABEL = {
+    1.5: "~16 AWG", 2.5: "~14 AWG", 4: "~12 AWG", 6: "~10 AWG",
+    10: "~8 AWG", 16: "~6 AWG", 25: "~4 AWG", 35: "~2 AWG",
+    50: "~1/0 AWG", 70: "~2/0 AWG", 95: "~3/0 AWG", 120: "~4/0 AWG",
+    150: "~300 kcmil", 185: "~350 kcmil", 240: "~500 kcmil",
+    300: "~600 kcmil", 400: "~750 kcmil", 500: "~1000 kcmil",
+}
 
 
+def mm2_ampacity(mm2: float, insulation: str = "pvc") -> int:
+    """Get IEC 60364 ampacity for a metric cable size. Uses actual IEC tables, not NEC conversion."""
+    table = IEC_AMPACITY_XLPE_3PHASE if insulation.lower() in ("xlpe", "epr", "xhhw") else IEC_AMPACITY_3PHASE
+    if mm2 in table:
+        return table[mm2]
+    # Find closest standard size
+    closest = min(table.keys(), key=lambda x: abs(x - mm2))
+    return table[closest]
+
+
+def mm2_to_approximate_label(mm2: float) -> str:
+    """Get approximate AWG/kcmil label for display only — NOT for engineering calculations."""
+    if mm2 in MM2_APPROXIMATE_AWG_LABEL:
+        return MM2_APPROXIMATE_AWG_LABEL[mm2]
+    closest = min(MM2_APPROXIMATE_AWG_LABEL.keys(), key=lambda x: abs(x - mm2))
+    return MM2_APPROXIMATE_AWG_LABEL[closest]
+
+
+# Keep these for backward compatibility but mark as approximate
 def mm2_to_awg(mm2: float) -> str:
-    """Convert metric mm² to nearest AWG/kcmil string."""
-    if mm2 in MM2_TO_AWG:
-        return MM2_TO_AWG[mm2]
-    # Find closest
-    closest = min(MM2_TO_AWG.keys(), key=lambda x: abs(x - mm2))
-    return MM2_TO_AWG[closest]
+    """APPROXIMATE conversion — for display reference only, not NEC calculations."""
+    label = mm2_to_approximate_label(mm2)
+    return label.replace("~", "").strip()
 
 
 def mm2_ampacity_75c(mm2: float) -> int:
-    """Get NEC 310.16 ampacity at 75°C for a metric cable size."""
-    awg = mm2_to_awg(mm2)
-    return NEC_310_16_75C.get(awg, 0)
+    """Get ampacity for metric cable — uses IEC tables (not NEC approximation)."""
+    return mm2_ampacity(mm2)
 
 
 # =============================================================================
