@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
+import os
+import shutil
+
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -6,7 +9,10 @@ from app.models.database_models import ReviewResult, Submittal
 from app.models.schemas import ReviewResultResponse
 from app.services.review_service import run_review
 from app.services.full_review_service import run_full_review
+from app.services.revision_diff import compare_revisions
 from app.review_engine.registry import get_available_equipment_types
+
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads")
 
 router = APIRouter(prefix="/api/reviews", tags=["reviews"])
 
@@ -104,7 +110,81 @@ def diagnose_submittal(submittal_id: int, db: Session = Depends(get_db)):
     }
 
 
+@router.post("/{submittal_id}/compare-revision")
+async def compare_revision(
+    submittal_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """Compare a new revision PDF against the existing submittal's PDF.
+
+    Upload the revised PDF and get back a structured diff showing what changed:
+    new/removed equipment, changed ratings, and modified pages.
+    """
+    submittal = db.query(Submittal).filter(Submittal.id == submittal_id).first()
+    if not submittal:
+        raise HTTPException(status_code=404, detail="Submittal not found")
+
+    if not submittal.file_path or not os.path.exists(submittal.file_path):
+        raise HTTPException(status_code=400, detail="Original submittal PDF not found on disk")
+
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Revision file must be a PDF")
+
+    # Save the revision PDF to a temp location
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    revision_filename = f"revision_{submittal_id}_{file.filename}"
+    revision_path = os.path.join(UPLOAD_DIR, revision_filename)
+
+    try:
+        with open(revision_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+
+        result = compare_revisions(submittal.file_path, revision_path)
+        return result
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Revision comparison failed: {e}")
+
+    finally:
+        # Clean up the temporary revision file
+        if os.path.exists(revision_path):
+            os.remove(revision_path)
+
+
 @router.get("/equipment-types")
 def list_equipment_types():
     """List all supported equipment types."""
     return {"equipment_types": get_available_equipment_types()}
+
+
+@router.post("/{submittal_id}/vision-analyze")
+def trigger_vision_analysis(submittal_id: int, db: Session = Depends(get_db)):
+    """Start background vision AI analysis on drawing pages."""
+    submittal = db.query(Submittal).filter(Submittal.id == submittal_id).first()
+    if not submittal:
+        raise HTTPException(status_code=404, detail="Submittal not found")
+
+    from app.services.vision_batch import start_vision_analysis, is_vision_available
+    from app.services.vision_analyzer import is_vision_available as check_vision
+
+    vision_status = check_vision()
+    if not vision_status["available"]:
+        return {"status": "unavailable", "message": vision_status["details"]}
+
+    start_vision_analysis(submittal_id)
+    return {"status": "started", "backend": vision_status["backend"]}
+
+
+@router.get("/{submittal_id}/vision-status")
+def get_vision_status(submittal_id: int):
+    """Check the status of a running vision analysis job."""
+    from app.services.vision_batch import get_vision_job_status
+    return get_vision_job_status(submittal_id)
+
+
+@router.get("/vision-available")
+def check_vision():
+    """Check if any vision backend (Ollama or Claude API) is available."""
+    from app.services.vision_analyzer import is_vision_available
+    return is_vision_available()
