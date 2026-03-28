@@ -1,4 +1,3 @@
-import re
 from .base import BaseEquipmentChecker, CheckItem, ReviewFinding
 
 
@@ -24,12 +23,5 @@ class RPPChecker(BaseEquipmentChecker):
             CheckItem("RPP-013", "Spare circuit positions per spec", "Distribution", "Project Spec", "minor"),
         ]
 
-    def _evaluate_check(self, item, text, metadata):
+    def _evaluate_check(self, item: CheckItem, text: str, metadata: dict) -> ReviewFinding:
         return super()._evaluate_check(item, text, metadata)
-
-    def _pass(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, 1, d, item.standard, item.severity)
-    def _fail(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, 0, d, item.standard, item.severity)
-    def _needs_review(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, -1, d, item.standard, item.severity)

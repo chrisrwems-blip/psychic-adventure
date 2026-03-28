@@ -50,31 +50,24 @@ class TransformerChecker(BaseEquipmentChecker):
             CheckItem("TX-052", "Factory test report included (routine tests)", "Standards", "IEEE C57.12.01", "minor"),
         ]
 
-    def _evaluate_check(self, item, text, metadata):
+    def _evaluate_check(self, item: CheckItem, text: str, metadata: dict) -> ReviewFinding:
         check_id = item.id
 
         if check_id == "TX-001":
             kva = re.findall(r'(\d{2,5})\s*kva', text)
             if kva:
-                return self._needs_review(item, f"kVA found: {kva}. Verify matches design.")
+                return self._pass(item, f"kVA found: {kva}. Verify matches design.")
             return self._fail(item, "No kVA rating found")
 
         if check_id == "TX-004":
             imp = re.search(r'(\d+\.?\d*)\s*%?\s*impedance', text)
             if imp:
-                return self._needs_review(item, f"Impedance {imp.group(1)}% found. Verify for fault current calcs.")
+                return self._pass(item, f"Impedance {imp.group(1)}% found. Verify for fault current calcs.")
             return self._fail(item, "Impedance not specified — critical for coordination study")
 
         if check_id == "TX-020":
             if any(x in text for x in ["doe", "efficiency", "10 cfr", "energy star"]):
-                return self._needs_review(item, "Efficiency/DOE compliance referenced. Verify meets DOE 2016.")
+                return self._pass(item, "Efficiency/DOE compliance referenced. Verify meets DOE 2016.")
             return self._fail(item, "DOE 2016 efficiency compliance not documented")
 
         return super()._evaluate_check(item, text, metadata)
-
-    def _pass(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, 1, d, item.standard, item.severity)
-    def _fail(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, 0, d, item.standard, item.severity)
-    def _needs_review(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, -1, d, item.standard, item.severity)

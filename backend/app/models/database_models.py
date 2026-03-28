@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, Enum, ForeignKey, Float
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Float
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import enum
@@ -138,3 +138,58 @@ class GeneratedEmail(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     submittal = relationship("Submittal", back_populates="emails")
+
+
+class RFI(Base):
+    __tablename__ = "rfis"
+
+    id = Column(Integer, primary_key=True, index=True)
+    submittal_id = Column(Integer, ForeignKey("submittals.id"), nullable=False)
+    rfi_number = Column(String(50))  # Auto-generated: RFI-001, RFI-002
+    subject = Column(String(500))
+    body = Column(Text)
+    status = Column(String(30), default="draft")  # draft, sent, responded, closed
+    severity = Column(String(20), default="major")
+    recipients = Column(Text)
+    due_date = Column(DateTime)
+    sent_at = Column(DateTime)
+    response_received_at = Column(DateTime)
+    response_text = Column(Text)
+    related_comment_ids = Column(Text)  # JSON list of comment IDs
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    closed_at = Column(DateTime)
+
+    submittal = relationship("Submittal", backref="rfis")
+
+
+class SubmittalRegisterItem(Base):
+    __tablename__ = "submittal_register"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    spec_section = Column(String(50))  # e.g., "26 24 16"
+    description = Column(String(500))  # e.g., "Medium Voltage Switchgear"
+    required = Column(Integer, default=1)  # 1=required, 0=optional
+    submittal_id = Column(Integer, ForeignKey("submittals.id"), nullable=True)  # linked submittal
+    status = Column(String(30), default="not_submitted")  # not_submitted, under_review, approved, rejected, resubmit_required
+    priority = Column(String(20), default="normal")  # critical, high, normal, low
+    notes = Column(Text)
+    due_date = Column(DateTime)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    project = relationship("Project")
+    submittal = relationship("Submittal")
+
+
+class FindingFeedback(Base):
+    __tablename__ = "finding_feedback"
+
+    id = Column(Integer, primary_key=True, index=True)
+    submittal_id = Column(Integer, ForeignKey("submittals.id"))
+    finding_type = Column(String(100))  # e.g., "cable_undersized", "missing_cutsheets"
+    check_name = Column(String(255))
+    action = Column(String(30))  # "agreed", "dismissed", "modified"
+    engineer_notes = Column(Text)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    submittal = relationship("Submittal", backref="feedback")

@@ -147,3 +147,45 @@ Utility/Generator → Main Switchgear → ATS → UPS → PDU → RPP/Panel → 
 - Cost or schedule implications
 - Conflicts between disciplines
 - Confidential or IP-sensitive content before client distribution
+
+---
+
+## DC Submittal Review Platform — Tool-Specific Context
+
+### Review Philosophy
+- The goal is 99% of the review done by the tool. Engineer just sanity-checks.
+- Focus on: NEC code compliance, life safety, constructability, actual mistakes
+- Comments must be SPECIFIC: "Page 16: Breaker Q2 E2.2H 1600A — NEC 240.87 requires arc energy reduction for 1200A+. Confirm ZSI provided."
+- NOT vague: "Related content found, verify..." is useless
+- One finding per issue per document. NOT one per page.
+- Comments only for critical/major issues. Minor/info = results only, no comment clutter.
+
+### Electrical Engineering — Tool Decisions
+- **AFC estimation**: Utility = 42kA (infinite bus, typical 2000kVA MV xfmr, 5.75%Z). Generator = 20kA (~12% Xd"). With interlocked breakers (NOT paralleled), AFC = max(utility, generator), NOT the sum.
+- **Metric cables**: Use IEC 60364 ampacity tables directly. Do NOT convert mm² to AWG for NEC lookup — the conversion is lossy and dangerous.
+- **ABB equipment format**: E6.2H 4000 (Emax 2 ACB), XT7H 1000 (Tmax XT MCCB), Sn=27.78[kVA] (apparent power notation). Not all Sn= values are transformers — chillers, pumps, power shelves use Sn= for their load draw.
+- **AFCI/GFCI**: Valid check, but check ONCE for the document — not every breaker. IT spaces are exempt.
+- **Spec-dependent checks**: Skip unless a spec document is uploaded.
+- **SLD topology**: Interlocked breakers between Source A (utility) and Source B (generator) — only one source at a time, never paralleled in normal operation.
+
+### What the Engineer Actually Reviews (from real 42-comment review)
+1. **SLD vs panel schedule consistency** — #1 issue
+2. **UL listing / NEC vs IEC** — Every piece must be UL listed for US installation
+3. **Constructability** — Cable routing space, cable entry cutouts, through-wall details
+4. **Naming consistency** — Equipment tags must be logical and consistent
+5. **Missing information** — Frame sizes, trip settings, PQM locations, fuse schedules
+6. **Engineering questions** — Why different kAIC on identical incomers?
+7. **Specific errors/typos** — Catch obvious mistakes
+
+### Frontend/UX
+- "Mark Up PDF" button should NOT trigger download — it generates markup and switches to View PDF tab
+- Only the "Download Marked Up PDF" button triggers download
+- Review summary dashboard should persist across page refreshes
+- Sort by severity is important — critical first
+- Auto-detect equipment type — no manual selection needed
+
+### Running the App
+- Double-click "DC Submittal Review.bat" (shows terminal) or "DC Submittal Review.vbs" (hidden)
+- Backend: Python FastAPI on port 8000
+- Frontend: Vite React on port 5173
+- Python 3.14 on user's machine — need unpinned deps (>=) not pinned (==)

@@ -3,7 +3,8 @@ import { useParams, Link } from 'react-router-dom';
 import {
   getSubmittal, runReview, getReviewResults, getComments,
   addComment, updateComment, generateEmail, getEmails,
-  getSubmittalPdfUrl, annotateSubmittal, getAnnotatedPdfUrl,
+  getSubmittalPdfUrl, annotateSubmittal, getAnnotatedPdfUrl, getAnnotatedPdfDownloadUrl,
+  getReportUrl, compareRevision,
 } from '../api/client';
 import type { Submittal, ReviewResult, ReviewComment, GeneratedEmail } from '../types';
 
@@ -12,6 +13,40 @@ const SEVERITY_COLORS: Record<string, string> = {
   major: 'bg-orange-100 text-orange-800 border-orange-300',
   minor: 'bg-yellow-100 text-yellow-800 border-yellow-300',
   info: 'bg-blue-100 text-blue-800 border-blue-300',
+};
+
+// NEC code commentary — "why it matters" explanations
+const NEC_COMMENTARY: Record<string, string> = {
+  "NEC 110.9": "A breaker that can't interrupt the available fault current may explode, causing arc flash, fire, and potentially fatal injuries.",
+  "NEC 110.24": "Field personnel need to know the fault current to verify equipment ratings and select proper PPE.",
+  "NEC 110.24(A)": "Field personnel need to know the fault current to verify equipment ratings and select proper PPE.",
+  "NEC 110.26": "Inadequate clearance prevents safe maintenance and creates arc flash risk. Frequently the most contentious issue in modular data centers.",
+  "NEC 230.95": "Arcing ground faults on 480Y/277V systems can persist at levels below overcurrent device pickup, causing fires.",
+  "NEC 240.4": "Undersized overcurrent protection can allow conductors to overheat, degrading insulation and potentially starting fires.",
+  "NEC 240.4(D)": "#14 AWG max 15A, #12 max 20A, #10 max 30A. Exceeding these limits is a direct NEC violation.",
+  "NEC 240.6": "Non-standard ratings indicate either an adjustable trip setting or an error.",
+  "NEC 240.87": "Large breakers can sustain arcs long enough to cause catastrophic burns. ZSI, maintenance switches, or active mitigation reduce this risk.",
+  "NEC 250.30": "Every transformer creates a separately derived system that must be independently grounded. Missing grounding creates shock hazards.",
+  "NEC 250.122": "Undersized grounding conductors may not safely carry fault current, preventing overcurrent devices from operating.",
+  "NEC 310.16": "THE table for sizing conductors. Using the wrong column or forgetting derating factors is a common error.",
+  "NEC 408.36": "A breaker rated higher than the bus can push more current through the bus than it can handle, causing overheating and fire.",
+  "NEC 450.3": "Transformer protection must balance between protecting the transformer and allowing inrush current.",
+  "NEC 450.3(B)": "Primary OCPD generally limited to 125% of FLA, next standard size up.",
+  "NEC 700.32": "A fault on one emergency branch must not trip upstream devices that feed other emergency loads. Loss of emergency power during a fire can be fatal.",
+  "NEC 700.32, 701.27": "Emergency and legally required standby systems require full selective coordination from load to alternate source.",
+  "NEC 701.27": "Same principle as 700.32 but for legally required standby loads like smoke control and elevators.",
+  "NEC 110.2": "Equipment without proper UL listing cannot be legally installed in the US.",
+  "NEC 110.2, 110.3(B)": "Equipment without proper UL listing cannot be legally installed in the US. IEC-only certification is not acceptable.",
+  "NEC 110.3(B)": "Using equipment outside its listed conditions voids the certification and may create safety hazards.",
+  "NEC 210.5": "Proper phase identification prevents cross-phase connections that can cause equipment damage and shock hazards.",
+  "IEEE C57.110": "Standard transformers serving IT loads will overheat due to harmonic currents. K-factor transformers handle this additional heating.",
+  "IEC 60364": "Metric cables must use IEC ampacity tables, not NEC. Converting mm² to AWG introduces errors.",
+  "UL 489": "Trip rating cannot exceed frame size — this is a fundamental product safety constraint.",
+  "ABB Product Catalog": "Frame/trip combination must be a real, orderable ABB product configuration.",
+  "Constructability": "Physical space and routing must be verified to ensure equipment can be installed and maintained.",
+  "Drawing Consistency": "Equipment designations, ratings, and locations must match between all drawings in the submittal.",
+  "Submittal Requirements": "Standard submittal documentation requirements for equipment review.",
+  "Drawing Standards": "Equipment labels and designations should be clear, consistent, and meaningful for field use.",
 };
 
 const RESULT_ICONS: Record<number, { icon: string; color: string }> = {
@@ -29,8 +64,18 @@ export default function SubmittalReview() {
   const [activeTab, setActiveTab] = useState<'review' | 'comments' | 'email' | 'pdf'>('review');
   const [reviewing, setReviewing] = useState(false);
   const [annotating, setAnnotating] = useState(false);
+  const [hasAnnotated, setHasAnnotated] = useState(false);
+  const [summaryPageCount, setSummaryPageCount] = useState(0);
+  const [viewingMarkup, setViewingMarkup] = useState(false);
   const [reviewSummary, setReviewSummary] = useState<any>(null);
   const [newComment, setNewComment] = useState({ comment_text: '', severity: 'info', reference_code: '' });
+  const [reviewSort, setReviewSort] = useState<'category' | 'severity' | 'status'>('severity');
+  const [reviewFilter, setReviewFilter] = useState<'all' | 'fail' | 'pass' | 'review'>('all');
+  const [commentSort, setCommentSort] = useState<'severity' | 'status' | 'date'>('severity');
+  const [expandedResult, setExpandedResult] = useState<number | null>(null);
+  const [pdfPage, setPdfPage] = useState<number>(1);
+  const [revisionChanges, setRevisionChanges] = useState<any[]>([]);
+  const [revisionSummary, setRevisionSummary] = useState<any>(null);
   const [emailForm, setEmailForm] = useState({ email_type: 'clarification', recipients: '', additional_notes: '' });
   const [selectedEmail, setSelectedEmail] = useState<GeneratedEmail | null>(null);
 
@@ -48,6 +93,26 @@ export default function SubmittalReview() {
       setResults(resRes.data);
       setComments(comRes.data);
       setEmails(emRes.data);
+      if (subRes.data.annotated_file_path) setHasAnnotated(true);
+
+      // Build summary from loaded results if we don't already have one
+      const res = resRes.data;
+      if (res.length > 0 && !reviewSummary) {
+        const passed = res.filter((r: any) => r.passed === 1).length;
+        const failed = res.filter((r: any) => r.passed === 0).length;
+        const needsReview = res.filter((r: any) => r.passed === -1).length;
+        const openComments = comRes.data.filter((c: any) => c.status === 'open').length;
+        setReviewSummary({
+          total_checks: res.length,
+          passed,
+          failed,
+          needs_review: needsReview,
+          critical_issues: comRes.data.filter((c: any) => c.severity === 'critical' && c.status === 'open').length,
+          major_issues: comRes.data.filter((c: any) => c.severity === 'major' && c.status === 'open').length,
+          comments_generated: openComments,
+          recommendation: failed > 0 ? 'Review has findings — see details below' : 'No failures found',
+        });
+      }
     } catch (e) {
       console.error('Failed to load', e);
     }
@@ -69,10 +134,12 @@ export default function SubmittalReview() {
   const handleAnnotate = async () => {
     setAnnotating(true);
     try {
-      await annotateSubmittal(Number(submittalId));
+      const res = await annotateSubmittal(Number(submittalId));
+      setHasAnnotated(true);
+      setSummaryPageCount(res.data.summary_page_count || 0);
+      setViewingMarkup(true);
+      setActiveTab('pdf');
       loadData();
-      // Open annotated PDF in new tab
-      window.open(getAnnotatedPdfUrl(Number(submittalId)), '_blank');
     } catch (e) {
       console.error('Annotation failed', e);
     } finally {
@@ -114,12 +181,58 @@ export default function SubmittalReview() {
 
   if (!submittal) return <div className="text-center py-12 text-gray-400">Loading...</div>;
 
-  // Group results by category
-  const resultsByCategory: Record<string, ReviewResult[]> = {};
-  results.forEach((r) => {
-    const cat = r.check_category || 'Other';
-    if (!resultsByCategory[cat]) resultsByCategory[cat] = [];
-    resultsByCategory[cat].push(r);
+  // Severity order for sorting
+  const severityOrder: Record<string, number> = { critical: 0, major: 1, minor: 2, info: 3 };
+  const statusOrder: Record<number, number> = { 0: 0, [-1]: 1, 1: 2 }; // fail, review, pass
+
+  // Filter results
+  const filteredResults = results.filter((r) => {
+    if (reviewFilter === 'fail') return r.passed === 0;
+    if (reviewFilter === 'pass') return r.passed === 1;
+    if (reviewFilter === 'review') return r.passed === -1;
+    return true;
+  });
+
+  // Group results by selected sort mode
+  const groupedResults: Record<string, ReviewResult[]> = {};
+  filteredResults.forEach((r) => {
+    let key: string;
+    if (reviewSort === 'severity') {
+      // Guess severity from details or category
+      const det = (r.details || '').toLowerCase();
+      if (det.includes('[critical]') || r.check_category?.toLowerCase().includes('critical')) key = 'Critical';
+      else if (det.includes('[major]')) key = 'Major';
+      else if (det.includes('[minor]')) key = 'Minor';
+      else if (r.passed === 0) key = 'Failed Checks';
+      else if (r.passed === -1) key = 'Needs Review';
+      else key = 'Passed';
+    } else if (reviewSort === 'status') {
+      key = r.passed === 0 ? 'FAIL' : r.passed === 1 ? 'PASS' : 'NEEDS REVIEW';
+    } else {
+      key = r.check_category || 'Other';
+    }
+    if (!groupedResults[key]) groupedResults[key] = [];
+    groupedResults[key].push(r);
+  });
+
+  // Sort groups: Failed first, then Needs Review, then Passed
+  const groupOrder: Record<string, number> = {
+    'Critical': 0, 'Failed Checks': 1, 'FAIL': 1,
+    'Major': 2, 'Needs Review': 3, 'NEEDS REVIEW': 3,
+    'Minor': 4, 'Passed': 5, 'PASS': 5,
+  };
+  const sortedGroups = Object.entries(groupedResults).sort(
+    ([a], [b]) => (groupOrder[a] ?? 10) - (groupOrder[b] ?? 10)
+  );
+
+  // Sort comments
+  const sortedComments = [...comments].sort((a, b) => {
+    if (commentSort === 'severity') return (severityOrder[a.severity] ?? 9) - (severityOrder[b.severity] ?? 9);
+    if (commentSort === 'status') {
+      const so: Record<string, number> = { open: 0, deferred: 1, resolved: 2 };
+      return (so[a.status] ?? 9) - (so[b.status] ?? 9);
+    }
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
   });
 
   const tabs = [
@@ -158,21 +271,240 @@ export default function SubmittalReview() {
           >
             {annotating ? 'Marking Up...' : 'Mark Up PDF'}
           </button>
+          <a
+            href={getReportUrl(Number(submittalId))}
+            className="px-6 py-2.5 bg-slate-700 text-white rounded-lg font-medium hover:bg-slate-800 inline-flex items-center"
+          >
+            Download Report
+          </a>
         </div>
       </div>
 
+      {/* Approval Stamp */}
+      <details className="card">
+        <summary className="px-5 py-4 cursor-pointer font-semibold text-sm text-slate-700 hover:text-blue-600 flex items-center gap-2">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.745 3.745 0 011.043 3.296A3.745 3.745 0 0121 12z" />
+          </svg>
+          Apply Review Stamp
+        </summary>
+        <div className="px-5 pb-5 border-t border-slate-100">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const fd = new FormData(e.currentTarget);
+              fetch(`/api/submittals/${submittalId}/stamp`, { method: 'POST', body: fd })
+                .then(r => r.blob())
+                .then(blob => {
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `stamped_submittal.pdf`;
+                  a.click();
+                });
+            }}
+            className="mt-4 space-y-3"
+          >
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Disposition</label>
+                <select name="disposition" className="select w-full">
+                  <option value="approved">Approved</option>
+                  <option value="approved_as_noted">Approved as Noted</option>
+                  <option value="revise_resubmit">Revise & Resubmit</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Reviewer Name</label>
+                <input name="reviewer_name" type="text" defaultValue="Engineer of Record" className="input w-full" />
+              </div>
+            </div>
+            <button type="submit" className="btn-primary">
+              Apply Stamp & Download
+            </button>
+          </form>
+        </div>
+      </details>
+
+      {/* Revision Comparison */}
+      <details className="card">
+        <summary className="px-5 py-4 cursor-pointer font-semibold text-sm text-slate-700 hover:text-blue-600 flex items-center gap-2">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+          </svg>
+          Compare with Revision (upload Rev B)
+        </summary>
+        <div className="px-5 pb-5 border-t border-slate-100">
+          <form onSubmit={async (e) => {
+            e.preventDefault();
+            const input = (e.currentTarget.querySelector('input[type=file]') as HTMLInputElement);
+            if (!input.files?.[0]) return;
+            const fd = new FormData();
+            fd.append('file', input.files[0]);
+            const btn = e.currentTarget.querySelector('button[type=submit]') as HTMLButtonElement;
+            btn.textContent = 'Comparing...';
+            btn.disabled = true;
+            try {
+              const res = await compareRevision(Number(submittalId), fd);
+              const data = res.data;
+              setRevisionChanges(data.changes || []);
+              setRevisionSummary(data.summary || null);
+            } catch (err) {
+              console.error('Comparison failed', err);
+            } finally {
+              btn.textContent = 'Compare';
+              btn.disabled = false;
+            }
+          }} className="flex gap-3 items-center mt-4">
+            <input type="file" accept=".pdf" className="input text-sm flex-1" />
+            <button type="submit" className="btn-primary">Compare</button>
+          </form>
+
+          {/* Revision Results */}
+          {revisionSummary && (
+            <div className="mt-4 space-y-4">
+              <div className="grid grid-cols-4 gap-3">
+                {[
+                  { label: 'Total Changes', value: revisionSummary.total_changes || 0, color: 'from-slate-500 to-slate-600' },
+                  { label: 'Added', value: revisionSummary.equipment_added || 0, color: 'from-emerald-500 to-emerald-600' },
+                  { label: 'Removed', value: revisionSummary.equipment_removed || 0, color: 'from-red-500 to-red-600' },
+                  { label: 'Modified', value: revisionSummary.ratings_changed || 0, color: 'from-amber-500 to-amber-600' },
+                ].map((s) => (
+                  <div key={s.label} className="relative bg-slate-50 rounded-lg p-3 overflow-hidden">
+                    <div className={`absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r ${s.color}`} />
+                    <p className="text-xs text-slate-500">{s.label}</p>
+                    <p className="text-xl font-bold text-slate-800">{s.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              {revisionChanges.length > 0 && (
+                <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-96 overflow-y-auto">
+                  {revisionChanges.map((change: any, i: number) => (
+                    <div key={i} className={`px-4 py-3 text-sm ${
+                      change.change_type === 'added' ? 'bg-emerald-50/50' :
+                      change.change_type === 'removed' ? 'bg-red-50/50' :
+                      'bg-amber-50/50'
+                    }`}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`badge ${
+                          change.change_type === 'added' ? 'badge-pass' :
+                          change.change_type === 'removed' ? 'badge-fail' :
+                          'badge-review'
+                        }`}>{change.change_type}</span>
+                        <span className="font-mono font-semibold text-slate-700">{change.equipment_id}</span>
+                      </div>
+                      <p className="text-slate-600">{change.description}</p>
+                      {change.old_value && change.new_value && (
+                        <p className="text-xs text-slate-500 mt-1">
+                          <span className="line-through text-red-500">{change.old_value}</span>
+                          {' → '}
+                          <span className="text-emerald-600 font-medium">{change.new_value}</span>
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </details>
+
+      {/* Spec Validation */}
+      <details className="card">
+        <summary className="px-5 py-4 cursor-pointer font-semibold text-sm text-slate-700 hover:text-blue-600 flex items-center gap-2">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15a2.25 2.25 0 012.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z" />
+          </svg>
+          Validate Against Spec (upload Division 26)
+        </summary>
+        <div className="px-5 pb-5 border-t border-slate-100">
+          <form onSubmit={async (e) => {
+            e.preventDefault();
+            const input = (e.currentTarget.querySelector('input[type=file]') as HTMLInputElement);
+            if (!input.files?.[0]) return;
+            const fd = new FormData();
+            fd.append('file', input.files[0]);
+            try {
+              const { validateSpec } = await import('../api/client');
+              const res = await validateSpec(Number(submittalId), fd);
+              alert(`Spec validation: ${res.data.spec_requirements} requirements found, ${res.data.total_findings} findings. Check console.`);
+              console.log('Spec validation:', res.data);
+            } catch (err) {
+              console.error('Spec validation failed', err);
+            }
+          }} className="flex gap-3 items-center mt-4">
+            <input type="file" accept=".pdf" className="input text-sm flex-1" />
+            <button type="submit" className="btn-primary">Validate</button>
+          </form>
+        </div>
+      </details>
+
       {/* Review Summary */}
       {reviewSummary && (
-        <div className="bg-white rounded-lg shadow p-4 border-l-4 border-blue-500">
-          <h3 className="font-bold mb-2">Review Summary</h3>
+        <div className="bg-white rounded-lg shadow p-4 border-l-4 border-blue-500 space-y-3">
+          <h3 className="font-bold">Review Summary</h3>
+
+          {/* Stats row */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
-            <div><span className="text-gray-500">Total Checks:</span> <strong>{reviewSummary.total_checks}</strong></div>
-            <div><span className="text-green-600">Passed:</span> <strong>{reviewSummary.passed}</strong></div>
-            <div><span className="text-red-600">Failed:</span> <strong>{reviewSummary.failed}</strong></div>
-            <div><span className="text-yellow-600">Needs Review:</span> <strong>{reviewSummary.needs_review}</strong></div>
-            <div><span className="text-red-700">Critical:</span> <strong>{reviewSummary.critical_issues}</strong></div>
+            <div className="bg-gray-50 rounded p-2"><span className="text-gray-500 block text-xs">Total Checks</span><strong className="text-lg">{reviewSummary.total_checks}</strong></div>
+            <div className="bg-green-50 rounded p-2"><span className="text-green-600 block text-xs">Passed</span><strong className="text-lg text-green-700">{reviewSummary.passed}</strong></div>
+            <div className="bg-red-50 rounded p-2"><span className="text-red-600 block text-xs">Failed</span><strong className="text-lg text-red-700">{reviewSummary.failed}</strong></div>
+            <div className="bg-yellow-50 rounded p-2"><span className="text-yellow-600 block text-xs">Needs Review</span><strong className="text-lg text-yellow-700">{reviewSummary.needs_review}</strong></div>
+            <div className="bg-red-50 rounded p-2"><span className="text-red-700 block text-xs">Critical</span><strong className="text-lg text-red-800">{reviewSummary.critical_issues}</strong></div>
           </div>
-          <div className="mt-2 text-sm font-semibold">{reviewSummary.recommendation}</div>
+
+          {/* Full review extras */}
+          {reviewSummary.review_type === 'full_package' && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div className="bg-blue-50 rounded p-2"><span className="text-blue-600 block text-xs">Pages Scanned</span><strong className="text-lg">{reviewSummary.total_pages}</strong></div>
+              <div className="bg-blue-50 rounded p-2"><span className="text-blue-600 block text-xs">Equipment Found</span><strong className="text-lg">{reviewSummary.equipment_count}</strong></div>
+              <div className="bg-purple-50 rounded p-2"><span className="text-purple-600 block text-xs">Cross-Ref Checks</span><strong className="text-lg">{reviewSummary.cross_reference_findings}</strong></div>
+              <div className="bg-orange-50 rounded p-2"><span className="text-orange-600 block text-xs">Major Issues</span><strong className="text-lg text-orange-700">{reviewSummary.major_issues}</strong></div>
+            </div>
+          )}
+
+          {/* Equipment discovered */}
+          {reviewSummary.equipment_found && reviewSummary.equipment_found.length > 0 && (
+            <details className="text-sm">
+              <summary className="cursor-pointer font-medium text-blue-600 hover:underline">
+                Equipment Discovered ({reviewSummary.equipment_found.length} items)
+              </summary>
+              <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-1">
+                {reviewSummary.equipment_found.map((eq: any, i: number) => (
+                  <div key={i} className="flex items-center gap-2 text-xs bg-gray-50 rounded px-2 py-1">
+                    <span className="font-mono font-bold text-blue-700">{eq.designation}</span>
+                    <span className="text-gray-400">{eq.type}</span>
+                    {eq.kva && <span className="text-gray-600">{eq.kva}kVA</span>}
+                    {eq.kw && <span className="text-gray-600">{eq.kw}kW</span>}
+                    {eq.voltage && <span className="text-gray-600">{eq.voltage}</span>}
+                    {eq.amperage && <span className="text-gray-600">{eq.amperage}</span>}
+                    <span className="text-gray-300">pg{eq.page}</span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+
+          {/* Page breakdown */}
+          {reviewSummary.page_breakdown && (
+            <details className="text-sm">
+              <summary className="cursor-pointer font-medium text-blue-600 hover:underline">
+                Page Classification
+              </summary>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {Object.entries(reviewSummary.page_breakdown).map(([type, count]: [string, any]) => (
+                  <span key={type} className="bg-gray-100 rounded px-2 py-1 text-xs">
+                    {type.replace('_', ' ')}: <strong>{count}</strong>
+                  </span>
+                ))}
+              </div>
+            </details>
+          )}
+
+          <div className="text-sm font-semibold mt-1 pt-2 border-t">{reviewSummary.recommendation}</div>
         </div>
       )}
 
@@ -197,23 +529,124 @@ export default function SubmittalReview() {
       {/* Tab Content */}
       {activeTab === 'review' && (
         <div className="space-y-4">
-          {Object.entries(resultsByCategory).map(([category, items]) => (
-            <div key={category} className="bg-white rounded-lg shadow">
-              <div className="px-4 py-3 border-b bg-gray-50 rounded-t-lg">
-                <h3 className="font-semibold text-sm">{category}</h3>
+          {/* Sort & Filter controls */}
+          <div className="flex gap-3 bg-white rounded-lg shadow p-3 items-center">
+            <span className="text-sm text-gray-500">Sort by:</span>
+            {(['severity', 'status', 'category'] as const).map((s) => (
+              <button key={s} onClick={() => setReviewSort(s)}
+                className={`px-3 py-1 rounded text-sm ${reviewSort === s ? 'bg-blue-600 text-white' : 'bg-gray-100 hover:bg-gray-200'}`}
+              >{s.charAt(0).toUpperCase() + s.slice(1)}</button>
+            ))}
+            <span className="text-sm text-gray-500 ml-4">Show:</span>
+            {([['all', 'All'], ['fail', 'Failures'], ['review', 'Needs Review'], ['pass', 'Passed']] as const).map(([val, label]) => (
+              <button key={val} onClick={() => setReviewFilter(val)}
+                className={`px-3 py-1 rounded text-sm ${reviewFilter === val ? 'bg-blue-600 text-white' : 'bg-gray-100 hover:bg-gray-200'}`}
+              >{label}</button>
+            ))}
+            <span className="text-xs text-gray-400 ml-auto">{filteredResults.length} of {results.length} results</span>
+          </div>
+
+          {sortedGroups.map(([group, items]) => (
+            <div key={group} className="bg-white rounded-lg shadow">
+              <div className="px-4 py-3 border-b bg-gray-50 rounded-t-lg flex items-center justify-between">
+                <h3 className="font-semibold text-sm">{group}</h3>
+                <span className="text-xs text-gray-400">{items.length} items</span>
               </div>
               <div className="divide-y">
                 {items.map((r) => {
                   const status = RESULT_ICONS[r.passed] || RESULT_ICONS[-1];
+                  const isExpanded = expandedResult === r.id;
+
+                  // Parse details: split on " | Recommendation: " if present
+                  const detailParts = (r.details || '').split(' | Recommendation: ');
+                  const mainDetail = detailParts[0];
+                  const recommendation = detailParts[1] || null;
+
+                  // Extract page number from detail text
+                  const pageMatch = mainDetail.match(/Page (\d+)/);
+                  const pageNum = pageMatch ? parseInt(pageMatch[1]) : null;
+
                   return (
-                    <div key={r.id} className="px-4 py-3 flex items-start gap-3">
-                      <span className={`px-2 py-0.5 rounded text-xs font-bold ${status.color}`}>{status.icon}</span>
-                      <div className="flex-1">
-                        <div className="text-sm font-medium">{r.check_name}</div>
-                        {r.details && <div className="text-xs text-gray-500 mt-0.5">{r.details}</div>}
+                    <div key={r.id}
+                      className={`px-4 py-3 cursor-pointer transition-colors ${isExpanded ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                      onClick={() => setExpandedResult(isExpanded ? null : r.id)}
+                    >
+                      <div className="flex items-start gap-3">
+                        <span className={`px-2 py-0.5 rounded text-xs font-bold ${status.color}`}>{status.icon}</span>
+                        <div className="flex-1">
+                          <div className="text-sm font-medium">{r.check_name}</div>
+                          {!isExpanded && mainDetail && <div className="text-xs text-gray-500 mt-0.5 line-clamp-1">{mainDetail}</div>}
+                        </div>
+                        {r.reference_standard && (
+                          <span className="text-xs text-gray-400 whitespace-nowrap">{r.reference_standard}</span>
+                        )}
+                        <span className="text-xs text-gray-300">{isExpanded ? '▼' : '▶'}</span>
                       </div>
-                      {r.reference_standard && (
-                        <span className="text-xs text-gray-400 whitespace-nowrap">{r.reference_standard}</span>
+
+                      {isExpanded && (
+                        <div className="mt-3 ml-8 space-y-3">
+                          {/* Finding Details */}
+                          <div className="bg-white border rounded p-3">
+                            <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Finding Details</div>
+                            <div className="text-sm text-gray-700">{mainDetail}</div>
+                          </div>
+
+                          {/* NEC Code Reference with Commentary */}
+                          {r.reference_standard && (
+                            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                              <div className="text-xs font-semibold text-amber-700 uppercase mb-1">Code Reference</div>
+                              <div className="text-sm text-amber-900 font-semibold">{r.reference_standard}</div>
+                              {NEC_COMMENTARY[r.reference_standard.split(',')[0].trim()] && (
+                                <div className="mt-2 pt-2 border-t border-amber-200/50">
+                                  <p className="text-xs text-amber-800 leading-relaxed">
+                                    {NEC_COMMENTARY[r.reference_standard.split(',')[0].trim()]}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Recommendation */}
+                          {recommendation && (
+                            <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                              <div className="text-xs font-semibold text-blue-700 uppercase mb-1">Recommended Action</div>
+                              <div className="text-sm text-blue-900">{recommendation}</div>
+                            </div>
+                          )}
+
+                          {/* Page link — opens marked-up PDF in new tab at correct page */}
+                          {pageNum && (
+                            <div className="flex gap-3">
+                              <a
+                                href={(() => {
+                                  const adjustedPage = hasAnnotated ? pageNum + summaryPageCount : pageNum;
+                                  const baseUrl = hasAnnotated
+                                    ? getAnnotatedPdfUrl(Number(submittalId))
+                                    : getSubmittalPdfUrl(Number(submittalId));
+                                  return baseUrl + '#page=' + adjustedPage;
+                                })()}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-xs text-blue-600 hover:underline font-medium"
+                              >
+                                Open Page {pageNum} in New Tab →
+                              </a>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const adjustedPage = hasAnnotated ? pageNum + summaryPageCount : pageNum;
+                                  setPdfPage(adjustedPage);
+                                  if (hasAnnotated) setViewingMarkup(true);
+                                  setActiveTab('pdf');
+                                }}
+                                className="text-xs text-purple-600 hover:underline font-medium"
+                              >
+                                View in PDF Tab →
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
                   );
@@ -261,9 +694,20 @@ export default function SubmittalReview() {
             </div>
           </form>
 
+          {/* Sort controls */}
+          <div className="flex gap-3 bg-white rounded-lg shadow p-3 items-center">
+            <span className="text-sm text-gray-500">Sort by:</span>
+            {(['severity', 'status', 'date'] as const).map((s) => (
+              <button key={s} onClick={() => setCommentSort(s)}
+                className={`px-3 py-1 rounded text-sm ${commentSort === s ? 'bg-blue-600 text-white' : 'bg-gray-100 hover:bg-gray-200'}`}
+              >{s.charAt(0).toUpperCase() + s.slice(1)}</button>
+            ))}
+            <span className="text-xs text-gray-400 ml-auto">{comments.length} comments</span>
+          </div>
+
           {/* Comment List */}
           <div className="space-y-2">
-            {comments.map((c) => (
+            {sortedComments.map((c) => (
               <div key={c.id} className={`bg-white rounded-lg shadow p-4 border-l-4 ${
                 c.status === 'resolved' ? 'border-green-400 opacity-60' :
                 c.status === 'deferred' ? 'border-gray-400 opacity-60' :
@@ -382,11 +826,72 @@ export default function SubmittalReview() {
 
       {activeTab === 'pdf' && (
         <div className="bg-white rounded-lg shadow">
+          {/* PDF toolbar */}
+          <div className="flex items-center justify-between px-4 py-2 border-b bg-gray-50 rounded-t-lg">
+            <div className="flex gap-2">
+              <button
+                onClick={() => setViewingMarkup(false)}
+                className={`px-3 py-1 rounded text-sm font-medium ${!viewingMarkup ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+              >
+                Original PDF
+              </button>
+              <button
+                onClick={() => { if (hasAnnotated) setViewingMarkup(true); }}
+                disabled={!hasAnnotated}
+                className={`px-3 py-1 rounded text-sm font-medium ${viewingMarkup ? 'bg-purple-600 text-white' : hasAnnotated ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}
+              >
+                Marked Up PDF
+              </button>
+            </div>
+            {/* Page navigation */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { if (pdfPage > 1) setPdfPage(pdfPage - 1); }}
+                className="px-2 py-1 bg-gray-200 rounded text-sm hover:bg-gray-300"
+              >
+                ←
+              </button>
+              <span className="text-xs text-gray-500">Page</span>
+              <input
+                type="number"
+                value={pdfPage}
+                onChange={(e) => setPdfPage(Math.max(1, parseInt(e.target.value) || 1))}
+                className="w-16 border rounded px-2 py-1 text-sm text-center"
+                min={1}
+              />
+              <button
+                onClick={() => setPdfPage(pdfPage + 1)}
+                className="px-2 py-1 bg-gray-200 rounded text-sm hover:bg-gray-300"
+              >
+                →
+              </button>
+            </div>
+
+            <div className="flex gap-2">
+              {viewingMarkup && hasAnnotated && (
+                <a
+                  href={getAnnotatedPdfDownloadUrl(Number(submittalId))}
+                  className="px-3 py-1 bg-green-600 text-white rounded text-sm font-medium hover:bg-green-700"
+                >
+                  Download Marked Up PDF
+                </a>
+              )}
+              <a
+                href={viewingMarkup && hasAnnotated ? getAnnotatedPdfUrl(Number(submittalId)) : getSubmittalPdfUrl(Number(submittalId))}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300"
+              >
+                Open in New Tab
+              </a>
+            </div>
+          </div>
           <iframe
-            src={getSubmittalPdfUrl(Number(submittalId))}
-            className="w-full rounded-lg"
+            key={`pdf-${viewingMarkup}-${pdfPage}`}
+            src={`${viewingMarkup && hasAnnotated ? getAnnotatedPdfUrl(Number(submittalId)) : getSubmittalPdfUrl(Number(submittalId))}#page=${pdfPage}`}
+            className="w-full rounded-b-lg"
             style={{ height: '80vh' }}
-            title="Submittal PDF"
+            title={viewingMarkup ? 'Marked Up PDF' : 'Submittal PDF'}
           />
         </div>
       )}

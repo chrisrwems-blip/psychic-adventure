@@ -46,7 +46,7 @@ class CableChecker(BaseEquipmentChecker):
             CheckItem("CBL-051", "NEC Article 310 compliance", "Standards", "NEC 310", "major"),
         ]
 
-    def _evaluate_check(self, item, text, metadata):
+    def _evaluate_check(self, item: CheckItem, text: str, metadata: dict) -> ReviewFinding:
         check_id = item.id
 
         if check_id == "CBL-001":
@@ -54,26 +54,19 @@ class CableChecker(BaseEquipmentChecker):
             kcmil = re.findall(r'(\d{3,4})\s*kcmil', text)
             if awg or kcmil:
                 found = f"AWG: {awg}" if awg else f"kcmil: {kcmil}"
-                return self._needs_review(item, f"Conductor sizes found: {found}. Verify ampacity.")
+                return self._pass(item, f"Conductor sizes found: {found}. Verify ampacity.")
             return self._fail(item, "No conductor size found")
 
         if check_id == "CBL-002":
             if "copper" in text or "cu" in text:
-                return self._needs_review(item, "Copper conductor referenced. Confirm copper required per spec.")
+                return self._pass(item, "Copper conductor referenced. Confirm copper required per spec.")
             if "aluminum" in text or "al " in text:
                 return self._fail(item, "Aluminum conductor found — verify if acceptable for data center application")
             return self._fail(item, "Conductor material not specified")
 
         if check_id == "CBL-041":
             if "voltage drop" in text or "volt drop" in text:
-                return self._needs_review(item, "Voltage drop referenced. Verify within 3%/5% limits.")
+                return self._pass(item, "Voltage drop referenced. Verify within 3%/5% limits.")
             return self._fail(item, "Voltage drop not addressed")
 
         return super()._evaluate_check(item, text, metadata)
-
-    def _pass(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, 1, d, item.standard, item.severity)
-    def _fail(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, 0, d, item.standard, item.severity)
-    def _needs_review(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, -1, d, item.standard, item.severity)

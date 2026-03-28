@@ -69,6 +69,37 @@ export interface GeneratedEmail {
   created_at: string;
 }
 
+export interface RFI {
+  id: number;
+  submittal_id: number;
+  rfi_number: string;
+  subject: string;
+  description?: string;
+  status: string;
+  severity: string;
+  due_date?: string;
+  response?: string;
+  created_at: string;
+  updated_at?: string;
+  submittal_title?: string;
+  project_name?: string;
+}
+
+export interface RegisterItem {
+  id: number;
+  project_id: number;
+  spec_section: string;
+  description: string;
+  status: string;
+  priority: string;
+  submittal_id?: number;
+  submittal_title?: string;
+  due_date?: string;
+  notes?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
 export interface DashboardStats {
   total_projects: number;
   total_submittals: number;
