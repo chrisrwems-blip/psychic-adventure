@@ -86,6 +86,12 @@ export const detectSmtpProvider = (email: string) =>
   api.post('/settings/email/detect', { email });
 export const testEmailConnection = (data: { email: string; password: string; host: string; port: number }) =>
   api.post('/settings/email/test', data);
+export const getProfile = () => api.get('/settings/profile');
+export const saveProfile = (data: {
+  reviewer_name?: string; reviewer_title?: string;
+  company_name?: string; company_address?: string; company_phone?: string;
+  default_jurisdiction?: string; review_sla_days?: number; report_min_severity?: string;
+}) => api.post('/settings/profile', data);
 export const sendGeneratedEmail = (emailId: number, data: { to: string; cc?: string }) =>
   api.post(`/emails/${emailId}/send`, data);
 

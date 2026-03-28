@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 from fastapi import APIRouter
 from pydantic import BaseModel
 
@@ -10,6 +13,8 @@ from app.services.smtp_service import (
 )
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
+
+PROFILE_FILE = Path(__file__).parent.parent.parent / "profile_settings.json"
 
 
 class EmailSettingsRequest(BaseModel):
@@ -73,3 +78,34 @@ def test_email_connection(request: EmailSettingsRequest):
         host=request.host,
         port=request.port,
     )
+
+
+# --- Profile & Preferences ---
+
+class ProfileSettings(BaseModel):
+    reviewer_name: str = ""
+    reviewer_title: str = ""
+    company_name: str = ""
+    company_address: str = ""
+    company_phone: str = ""
+    default_jurisdiction: str = "auto"
+    review_sla_days: int = 5
+    report_min_severity: str = "minor"
+
+
+@router.get("/profile")
+def get_profile():
+    """Get saved profile and preference settings."""
+    if not PROFILE_FILE.exists():
+        return ProfileSettings().model_dump()
+    try:
+        return json.loads(PROFILE_FILE.read_text())
+    except (json.JSONDecodeError, IOError):
+        return ProfileSettings().model_dump()
+
+
+@router.post("/profile")
+def save_profile(request: ProfileSettings):
+    """Save profile and preference settings."""
+    PROFILE_FILE.write_text(json.dumps(request.model_dump(), indent=2))
+    return {"status": "saved"}
