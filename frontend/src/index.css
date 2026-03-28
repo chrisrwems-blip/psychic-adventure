@@ -1,3 +1,146 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  body {
+    @apply antialiased text-slate-800;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Smooth scrolling */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Better focus styles */
+  *:focus-visible {
+    @apply outline-2 outline-offset-2 outline-blue-500;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    @apply w-2;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-slate-100 rounded;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-slate-300 rounded hover:bg-slate-400;
+  }
+}
+
+@layer components {
+  /* Card styles */
+  .card {
+    @apply bg-white rounded-xl shadow-sm border border-slate-200/60 transition-shadow hover:shadow-md;
+  }
+
+  .card-header {
+    @apply px-5 py-4 border-b border-slate-100 bg-slate-50/50 rounded-t-xl;
+  }
+
+  /* Button styles */
+  .btn-primary {
+    @apply px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold
+           hover:bg-blue-700 active:bg-blue-800
+           shadow-sm hover:shadow-md shadow-blue-600/10 hover:shadow-blue-600/20
+           transition-all duration-200
+           disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-sm;
+  }
+
+  .btn-secondary {
+    @apply px-4 py-2.5 bg-white text-slate-700 rounded-lg text-sm font-medium
+           border border-slate-200 hover:bg-slate-50 hover:border-slate-300
+           shadow-sm transition-all duration-200;
+  }
+
+  .btn-danger {
+    @apply px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-semibold
+           hover:bg-red-700 shadow-sm hover:shadow-md shadow-red-600/10
+           transition-all duration-200;
+  }
+
+  .btn-success {
+    @apply px-4 py-2.5 bg-emerald-600 text-white rounded-lg text-sm font-semibold
+           hover:bg-emerald-700 shadow-sm hover:shadow-md shadow-emerald-600/10
+           transition-all duration-200;
+  }
+
+  /* Input styles */
+  .input {
+    @apply border border-slate-200 rounded-lg px-3.5 py-2.5 text-sm
+           bg-white placeholder-slate-400
+           focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20
+           transition-all duration-200;
+  }
+
+  .select {
+    @apply border border-slate-200 rounded-lg px-3.5 py-2.5 text-sm
+           bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20
+           transition-all duration-200;
+  }
+
+  /* Badge styles */
+  .badge {
+    @apply px-2.5 py-0.5 rounded-full text-xs font-semibold tracking-wide;
+  }
+
+  .badge-critical { @apply bg-red-100 text-red-700 ring-1 ring-red-200; }
+  .badge-major { @apply bg-orange-100 text-orange-700 ring-1 ring-orange-200; }
+  .badge-minor { @apply bg-amber-100 text-amber-700 ring-1 ring-amber-200; }
+  .badge-info { @apply bg-blue-100 text-blue-700 ring-1 ring-blue-200; }
+  .badge-pass { @apply bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200; }
+  .badge-fail { @apply bg-red-100 text-red-700 ring-1 ring-red-200; }
+  .badge-review { @apply bg-amber-100 text-amber-700 ring-1 ring-amber-200; }
+
+  /* Status badges */
+  .status-uploaded { @apply bg-slate-100 text-slate-600; }
+  .status-reviewing { @apply bg-yellow-100 text-yellow-700; }
+  .status-reviewed { @apply bg-blue-100 text-blue-700; }
+  .status-approved { @apply bg-emerald-100 text-emerald-700; }
+  .status-rejected { @apply bg-red-100 text-red-700; }
+
+  /* Stat card */
+  .stat-card {
+    @apply rounded-xl p-4 shadow-sm border border-white/20 relative overflow-hidden;
+  }
+  .stat-card::after {
+    content: '';
+    @apply absolute inset-0 bg-gradient-to-br from-white/10 to-transparent;
+  }
+
+  /* Section heading */
+  .section-heading {
+    @apply text-lg font-bold text-slate-800 tracking-tight;
+  }
+
+  /* Severity left border */
+  .severity-border-critical { @apply border-l-4 border-l-red-500; }
+  .severity-border-major { @apply border-l-4 border-l-orange-500; }
+  .severity-border-minor { @apply border-l-4 border-l-amber-400; }
+  .severity-border-info { @apply border-l-4 border-l-blue-400; }
+
+  /* Pill toggle */
+  .pill-toggle {
+    @apply px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer;
+  }
+  .pill-toggle-active {
+    @apply bg-blue-600 text-white shadow-sm shadow-blue-600/20;
+  }
+  .pill-toggle-inactive {
+    @apply bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700;
+  }
+}
+
+/* Animation for loading */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
