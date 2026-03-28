@@ -19,6 +19,7 @@ from app.services.pdf_parser import extract_text_by_page, extract_metadata_by_pa
 from app.services.page_classifier import classify_all_pages, get_page_summary, PageType
 from app.services.equipment_extractor import extract_all_equipment, ExtractedEquipment
 from app.services.cross_reference import run_cross_reference, CrossRefFinding
+from app.services.topology import build_topology
 
 
 # Checks that don't apply to data center interiors
@@ -177,8 +178,11 @@ def run_full_review(db: Session, submittal_id: int, has_spec: bool = False) -> d
         all_findings.extend(findings)
         checkers_run.append(checker_type)
 
-    # --- Step 5: Cross-reference equipment ---
-    cross_ref_findings = run_cross_reference(all_equipment)
+    # --- Step 4b: Build system topology ---
+    topology = build_topology(all_equipment, pages)
+
+    # --- Step 5: Cross-reference equipment (topology-aware) ---
+    cross_ref_findings = run_cross_reference(all_equipment, topology, pages)
 
     # Deduplicate cross-ref by core issue
     seen_xref = set()
@@ -306,6 +310,9 @@ def run_full_review(db: Session, submittal_id: int, has_spec: bool = False) -> d
             for eq in all_equipment
         ],
         "equipment_count": len(all_equipment),
+        "topology_nodes": len(topology.nodes),
+        "topology_relationships": len(topology.relationships),
+        "topology_root_nodes": topology.root_nodes[:10],
         "total_checks": total_checks,
         "passed": passed,
         "failed": failed,
