@@ -48,7 +48,7 @@ async def upload_submittal(
     file: UploadFile = File(...),
     project_id: int = Form(...),
     title: str = Form(...),
-    equipment_type: str = Form(...),
+    equipment_type: str = Form("auto"),
     submittal_number: str = Form(None),
     manufacturer: str = Form(None),
     model_number: str = Form(None),

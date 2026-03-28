@@ -93,7 +93,7 @@ export default function ProjectDetail() {
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState({
-    title: '', equipment_type: 'switchgear', submittal_number: '',
+    title: '', equipment_type: 'auto', submittal_number: '',
     manufacturer: '', model_number: '', spec_section: '',
     submitted_by: '', contractor: '',
   });
@@ -129,7 +129,7 @@ export default function ProjectDetail() {
 
   const resetForm = () => {
     setFile(null);
-    setForm({ title: '', equipment_type: 'switchgear', submittal_number: '', manufacturer: '', model_number: '', spec_section: '', submitted_by: '', contractor: '' });
+    setForm({ title: '', equipment_type: 'auto', submittal_number: '', manufacturer: '', model_number: '', spec_section: '', submitted_by: '', contractor: '' });
   };
 
   const handleUpload = async (e: React.FormEvent) => {
@@ -345,6 +345,7 @@ export default function ProjectDetail() {
                       onChange={(e) => setForm({ ...form, equipment_type: e.target.value })}
                       className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
                     >
+                      <option value="auto">Auto-Detect (Recommended)</option>
                       {equipmentTypes.map((t) => (
                         <option key={t} value={t}>{t.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</option>
                       ))}
