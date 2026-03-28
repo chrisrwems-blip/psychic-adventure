@@ -143,15 +143,17 @@ def annotate_submittal(submittal_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{submittal_id}/annotated-pdf")
-def serve_annotated_pdf(submittal_id: int, db: Session = Depends(get_db)):
-    """Serve the annotated/marked-up PDF."""
+def serve_annotated_pdf(submittal_id: int, download: bool = False, db: Session = Depends(get_db)):
+    """Serve the annotated/marked-up PDF. ?download=true forces download."""
     s = db.query(Submittal).filter(Submittal.id == submittal_id).first()
     if not s:
         raise HTTPException(status_code=404, detail="Submittal not found")
     if not s.annotated_file_path or not os.path.exists(s.annotated_file_path):
         raise HTTPException(status_code=404, detail="Annotated PDF not yet generated. Run /annotate first.")
-    return FileResponse(s.annotated_file_path, media_type="application/pdf",
-                        filename=os.path.basename(s.annotated_file_path))
+    if download:
+        return FileResponse(s.annotated_file_path, media_type="application/pdf",
+                            filename=os.path.basename(s.annotated_file_path))
+    return FileResponse(s.annotated_file_path, media_type="application/pdf")
 
 
 @router.delete("/{submittal_id}")

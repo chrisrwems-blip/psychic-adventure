@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import {
   getSubmittal, runReview, getReviewResults, getComments,
   addComment, updateComment, generateEmail, getEmails,
-  getSubmittalPdfUrl, annotateSubmittal, getAnnotatedPdfUrl,
+  getSubmittalPdfUrl, annotateSubmittal, getAnnotatedPdfUrl, getAnnotatedPdfDownloadUrl,
 } from '../api/client';
 import type { Submittal, ReviewResult, ReviewComment, GeneratedEmail } from '../types';
 
@@ -535,8 +535,7 @@ export default function SubmittalReview() {
             <div className="flex gap-2">
               {viewingMarkup && hasAnnotated && (
                 <a
-                  href={getAnnotatedPdfUrl(Number(submittalId))}
-                  download
+                  href={getAnnotatedPdfDownloadUrl(Number(submittalId))}
                   className="px-3 py-1 bg-green-600 text-white rounded text-sm font-medium hover:bg-green-700"
                 >
                   Download Marked Up PDF
