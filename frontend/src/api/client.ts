@@ -64,3 +64,19 @@ export const checkVisionAvailable = () => api.get('/reviews/vision-available');
 
 // --- Dashboard ---
 export const getDashboard = () => api.get('/dashboard');
+
+// --- RFIs ---
+export const createRFI = (submittalId: number, data?: { email_type?: string }) =>
+  api.post(`/rfis/${submittalId}/create`, data || {});
+export const getRFIs = (submittalId: number) => api.get(`/rfis/${submittalId}`);
+export const getAllRFIs = (params?: { status?: string }) => api.get('/rfis/all', { params });
+export const updateRFIStatus = (rfiId: number, data: { status: string }) =>
+  api.patch(`/rfis/${rfiId}/status`, data);
+
+// --- Submittal Register ---
+export const getRegister = (projectId: number) => api.get(`/register/${projectId}`);
+export const addRegisterItem = (projectId: number, data: any) =>
+  api.post(`/register/${projectId}`, data);
+export const updateRegisterItem = (itemId: number, data: any) =>
+  api.patch(`/register/${itemId}`, data);
+export const getRegisterSummary = (projectId: number) => api.get(`/register/${projectId}/summary`);
