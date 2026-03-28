@@ -563,7 +563,7 @@ export default function SubmittalReview() {
                   const recommendation = detailParts[1] || null;
 
                   // Extract page number from detail text
-                  const pageMatch = mainDetail.match(/Page (\d+)/);
+                  const pageMatch = mainDetail.match(/(?:Page|pg)\s*(\d+)/i);
                   const pageNum = pageMatch ? parseInt(pageMatch[1]) : null;
 
                   return (

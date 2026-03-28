@@ -405,8 +405,8 @@ def _check_fault_current_coordination(equipment: list, topology: SystemTopology)
                 description=(
                     f"Page {node.page_number}: {desc_prefix} — Breaker {node.equipment_id} "
                     f"rated {icu}kA interrupting capacity. Estimated available fault current at "
-                    f"this point is ~{afc:.0f}kA (based on infinite bus utility assumption + generator "
-                    f"contribution). Verify with actual fault current study per NEC 110.9."
+                    f"this point is ~{afc:.0f}kA (based on infinite bus utility assumption — "
+                    f"interlocked sources, not paralleled). Verify with actual fault current study per NEC 110.9."
                 ),
                 reference_code="NEC 110.9",
                 recommendation=(
