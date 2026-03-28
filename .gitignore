@@ -9,7 +9,8 @@ __pycache__/
 node_modules/
 dist/
 
-# Uploads
+# Submittals and uploaded PDFs (never commit client documents)
+*.pdf
 backend/uploads/
 backend/annotated/
 
