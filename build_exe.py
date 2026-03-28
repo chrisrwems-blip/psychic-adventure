@@ -113,6 +113,15 @@ uvicorn.run(app, host="0.0.0.0", port=8000)
 def build_exe():
     step("Building .exe with PyInstaller")
 
+    # Clean ALL PyInstaller artifacts first
+    for d in ["build", "dist", "__pycache__"]:
+        path = os.path.join(BACKEND, d)
+        if os.path.exists(path):
+            shutil.rmtree(path)
+    for spec in [os.path.join(BACKEND, "DC_Submittal_Review.spec")]:
+        if os.path.exists(spec):
+            os.remove(spec)
+
     # PyInstaller spec
     subprocess.run([
         sys.executable, "-m", "PyInstaller",
