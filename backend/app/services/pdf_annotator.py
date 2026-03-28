@@ -1,4 +1,5 @@
 """PDF annotation service - add markup/comments to PDF files."""
+import math
 import os
 from io import BytesIO
 from reportlab.lib.colors import Color
@@ -22,53 +23,64 @@ def annotate_pdf(db: Session, submittal_id: int) -> str:
     comments = (
         db.query(ReviewComment)
         .filter(ReviewComment.submittal_id == submittal_id)
-        .order_by(ReviewComment.page_number, ReviewComment.id)
+        .order_by(ReviewComment.id)
         .all()
     )
 
     reader = PdfReader(submittal.file_path)
     writer = PdfWriter()
+    num_pages = len(reader.pages)
 
-    # Group comments by page (1-indexed), unassigned go to page 1
-    comments_by_page: dict[int, list[ReviewComment]] = {}
-    for c in comments:
-        page = (c.page_number or 1) - 1  # Convert to 0-indexed
-        if page < 0 or page >= len(reader.pages):
-            page = 0
-        comments_by_page.setdefault(page, [])
-        comments_by_page[page].append(c)
+    # Split comments: those with assigned pages vs unassigned
+    assigned = [c for c in comments if c.page_number and 1 <= c.page_number <= num_pages]
+    unassigned = [c for c in comments if not c.page_number or c.page_number < 1 or c.page_number > num_pages]
 
+    # Group assigned comments by page (0-indexed)
+    comments_by_page: dict[int, list] = {}
+    for c in assigned:
+        page_idx = c.page_number - 1
+        comments_by_page.setdefault(page_idx, [])
+        comments_by_page[page_idx].append(c)
+
+    # Spread unassigned comments evenly across all pages
+    if unassigned and num_pages > 0:
+        # How many comments fit per page sidebar (roughly)
+        max_per_page = 8
+        for i, c in enumerate(unassigned):
+            page_idx = min(i // max_per_page, num_pages - 1)
+            comments_by_page.setdefault(page_idx, [])
+            comments_by_page[page_idx].append(c)
+
+    # --- Build the PDF ---
+
+    # 1. Add cover summary pages FIRST
+    summary_pages = _create_summary_pages(comments, submittal)
+    summary_reader = PdfReader(summary_pages)
+    for sp in summary_reader.pages:
+        writer.add_page(sp)
+
+    # 2. Add original pages with comment sidebars
     for page_idx, page in enumerate(reader.pages):
         page_comments = comments_by_page.get(page_idx, [])
 
         if page_comments:
-            # Get page dimensions
             media_box = page.mediabox
             page_width = float(media_box.width)
             page_height = float(media_box.height)
 
-            # Create overlay with comments
             overlay_buffer = BytesIO()
             overlay = canvas.Canvas(overlay_buffer, pagesize=(page_width, page_height))
 
             _draw_comment_sidebar(overlay, page_comments, page_width, page_height)
-            _draw_comment_markers(overlay, page_comments, page_width, page_height)
 
             overlay.save()
             overlay_buffer.seek(0)
 
-            # Merge overlay onto page
             overlay_reader = PdfReader(overlay_buffer)
             if len(overlay_reader.pages) > 0:
                 page.merge_page(overlay_reader.pages[0])
 
         writer.add_page(page)
-
-    # Add summary page at the end
-    summary_buffer = _create_summary_page(comments, submittal)
-    summary_reader = PdfReader(summary_buffer)
-    for sp in summary_reader.pages:
-        writer.add_page(sp)
 
     # Save annotated PDF
     annotated_dir = os.path.join(os.path.dirname(submittal.file_path), "annotated")
@@ -79,120 +91,269 @@ def annotate_pdf(db: Session, submittal_id: int) -> str:
     with open(annotated_path, "wb") as f:
         writer.write(f)
 
-    # Update submittal record
     submittal.annotated_file_path = annotated_path
     db.commit()
 
     return annotated_path
 
 
+# ---------------------------------------------------------------------------
+#  Sidebar drawing
+# ---------------------------------------------------------------------------
+
 def _draw_comment_sidebar(c: canvas.Canvas, comments: list, page_width: float, page_height: float):
-    """Draw a comment sidebar on the right edge of the page."""
-    sidebar_width = 180
+    """Draw a narrow comment sidebar on the right edge of the page."""
+    sidebar_width = 170
     margin = 5
     x_start = page_width - sidebar_width - margin
-    y_start = page_height - 30
+    y_start = page_height - 25
 
-    # Semi-transparent sidebar background
-    c.setFillColor(Color(1, 1, 0.85, alpha=0.85))
+    # Background
+    c.setFillColor(Color(1, 1, 0.88, alpha=0.90))
     c.rect(x_start - 5, 10, sidebar_width + 10, page_height - 20, fill=True, stroke=False)
 
-    # Border
-    c.setStrokeColor(Color(0.6, 0.6, 0.6))
-    c.setLineWidth(0.5)
+    # Left border line
+    c.setStrokeColor(Color(0.5, 0.5, 0.5))
+    c.setLineWidth(0.75)
     c.line(x_start - 5, 10, x_start - 5, page_height - 10)
 
     # Header
-    c.setFillColor(Color(0.2, 0.2, 0.2))
-    c.setFont("Helvetica-Bold", 8)
+    c.setFillColor(Color(0.15, 0.15, 0.15))
+    c.setFont("Helvetica-Bold", 7)
     c.drawString(x_start, y_start, "REVIEW COMMENTS")
     c.setLineWidth(0.3)
     c.line(x_start, y_start - 3, x_start + sidebar_width - 10, y_start - 3)
 
-    y = y_start - 15
+    y = y_start - 14
 
     severity_colors = {
         "critical": Color(0.8, 0.1, 0.1),
         "major": Color(0.8, 0.4, 0),
-        "minor": Color(0.7, 0.6, 0),
+        "minor": Color(0.6, 0.55, 0),
         "info": Color(0.2, 0.4, 0.8),
     }
 
-    for i, comment in enumerate(comments):
-        if y < 30:
-            break  # Don't overflow page
+    for comment in comments:
+        if y < 25:
+            break
 
         color = severity_colors.get(comment.severity, Color(0.3, 0.3, 0.3))
 
-        # Severity badge
+        # Severity tag
         c.setFillColor(color)
-        c.setFont("Helvetica-Bold", 6)
-        badge_text = comment.severity.upper()
-        c.drawString(x_start, y, f"[{badge_text}]")
+        c.setFont("Helvetica-Bold", 5.5)
+        c.drawString(x_start, y, f"[{comment.severity.upper()}]")
 
-        # Reference code
+        # Reference
+        ref_x = x_start + 42
         if comment.reference_code:
-            c.setFillColor(Color(0.4, 0.4, 0.4))
-            c.setFont("Helvetica", 5)
-            c.drawString(x_start + 45, y, comment.reference_code)
+            c.setFillColor(Color(0.35, 0.35, 0.35))
+            c.setFont("Helvetica-Oblique", 5)
+            c.drawString(ref_x, y, comment.reference_code[:25])
 
-        y -= 9
+        y -= 8
 
-        # Comment text (wrapped)
+        # Comment text
         c.setFillColor(Color(0.1, 0.1, 0.1))
-        c.setFont("Helvetica", 6)
-        text = comment.comment_text[:200]  # Truncate long comments
-        lines = _wrap_text(text, sidebar_width - 10, 6)
-        for line in lines[:4]:  # Max 4 lines per comment
-            if y < 30:
+        c.setFont("Helvetica", 5.5)
+        text = comment.comment_text[:180]
+        lines = _wrap_text(text, sidebar_width - 12, 5.5)
+        for line in lines[:3]:
+            if y < 25:
                 break
             c.drawString(x_start, y, line)
-            y -= 8
+            y -= 7
 
-        # Divider
-        y -= 3
-        c.setStrokeColor(Color(0.8, 0.8, 0.8))
+        # Thin divider
+        y -= 2
+        c.setStrokeColor(Color(0.82, 0.82, 0.82))
         c.setLineWidth(0.2)
         c.line(x_start, y, x_start + sidebar_width - 10, y)
-        y -= 5
+        y -= 4
 
 
-def _draw_comment_markers(c: canvas.Canvas, comments: list, page_width: float, page_height: float):
-    """Draw numbered markers at comment positions (if x,y are set) or along the left margin."""
-    severity_colors = {
-        "critical": Color(0.9, 0.1, 0.1),
-        "major": Color(0.9, 0.5, 0),
-        "minor": Color(0.8, 0.7, 0),
-        "info": Color(0.2, 0.5, 0.9),
+# ---------------------------------------------------------------------------
+#  Summary cover pages
+# ---------------------------------------------------------------------------
+
+def _create_summary_pages(comments: list, submittal) -> BytesIO:
+    """Create professional summary cover pages listing all comments."""
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=letter)
+    w, h = letter
+
+    # --- Page 1: Header ---
+    # Title bar
+    c.setFillColor(Color(0.12, 0.18, 0.30))
+    c.rect(0, h - 80, w, 80, fill=True, stroke=False)
+
+    c.setFillColor(Color(1, 1, 1))
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(50, h - 45, "SUBMITTAL REVIEW MARKUP")
+    c.setFont("Helvetica", 11)
+    c.drawString(50, h - 62, "DataCenter Submittal Review Platform")
+
+    # Project info box
+    y = h - 105
+    c.setFillColor(Color(0.95, 0.95, 0.97))
+    c.rect(40, y - 80, w - 80, 85, fill=True, stroke=False)
+    c.setStrokeColor(Color(0.8, 0.8, 0.8))
+    c.rect(40, y - 80, w - 80, 85, fill=False, stroke=True)
+
+    c.setFillColor(Color(0.1, 0.1, 0.1))
+    info_y = y - 5
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(55, info_y, "Submittal:")
+    c.setFont("Helvetica", 10)
+    c.drawString(130, info_y, submittal.title or "N/A")
+
+    info_y -= 16
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(55, info_y, "Equipment:")
+    c.setFont("Helvetica", 10)
+    c.drawString(130, info_y, submittal.equipment_type.replace("_", " ").title())
+
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(320, info_y, "Submittal No:")
+    c.setFont("Helvetica", 10)
+    c.drawString(410, info_y, submittal.submittal_number or "N/A")
+
+    info_y -= 16
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(55, info_y, "Manufacturer:")
+    c.setFont("Helvetica", 10)
+    c.drawString(140, info_y, submittal.manufacturer or "N/A")
+
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(320, info_y, "Contractor:")
+    c.setFont("Helvetica", 10)
+    c.drawString(400, info_y, submittal.contractor or "N/A")
+
+    info_y -= 16
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(55, info_y, "Status:")
+    c.setFont("Helvetica", 10)
+    c.drawString(130, info_y, (submittal.status or "").replace("_", " ").upper())
+
+    # --- Statistics boxes ---
+    total = len(comments)
+    critical = sum(1 for co in comments if co.severity == "critical")
+    major = sum(1 for co in comments if co.severity == "major")
+    minor = sum(1 for co in comments if co.severity == "minor")
+    info = sum(1 for co in comments if co.severity == "info")
+    open_ct = sum(1 for co in comments if co.status == "open")
+
+    stat_y = h - 215
+    box_w = 90
+    box_h = 45
+    gap = 12
+    start_x = 50
+
+    stat_items = [
+        ("TOTAL", str(total), Color(0.2, 0.3, 0.6)),
+        ("CRITICAL", str(critical), Color(0.8, 0.1, 0.1)),
+        ("MAJOR", str(major), Color(0.85, 0.45, 0)),
+        ("MINOR", str(minor), Color(0.7, 0.6, 0)),
+        ("OPEN", str(open_ct), Color(0.9, 0.2, 0.2)),
+    ]
+
+    for i, (label, val, color) in enumerate(stat_items):
+        bx = start_x + i * (box_w + gap)
+        c.setFillColor(color)
+        c.rect(bx, stat_y, box_w, box_h, fill=True, stroke=False)
+        c.setFillColor(Color(1, 1, 1))
+        c.setFont("Helvetica-Bold", 18)
+        c.drawCentredString(bx + box_w / 2, stat_y + 22, val)
+        c.setFont("Helvetica", 7)
+        c.drawCentredString(bx + box_w / 2, stat_y + 8, label)
+
+    # --- Comment table ---
+    table_y = stat_y - 30
+
+    c.setFillColor(Color(0.12, 0.18, 0.30))
+    c.rect(40, table_y - 2, w - 80, 18, fill=True, stroke=False)
+    c.setFillColor(Color(1, 1, 1))
+    c.setFont("Helvetica-Bold", 8)
+    c.drawString(50, table_y + 3, "#")
+    c.drawString(68, table_y + 3, "SEVERITY")
+    c.drawString(130, table_y + 3, "STATUS")
+    c.drawString(190, table_y + 3, "REFERENCE")
+    c.drawString(290, table_y + 3, "COMMENT")
+
+    y = table_y - 16
+    row_colors = [Color(1, 1, 1), Color(0.96, 0.96, 0.98)]
+
+    severity_text_colors = {
+        "critical": Color(0.75, 0.05, 0.05),
+        "major": Color(0.75, 0.35, 0),
+        "minor": Color(0.55, 0.45, 0),
+        "info": Color(0.2, 0.35, 0.7),
     }
 
-    for i, comment in enumerate(comments):
-        color = severity_colors.get(comment.severity, Color(0.5, 0.5, 0.5))
+    for i, co in enumerate(comments):
+        # Calculate row height
+        text_lines = _wrap_text(co.comment_text[:250], 270, 7)
+        lines_to_show = min(len(text_lines), 3)
+        row_h = max(14, lines_to_show * 10 + 4)
 
-        if comment.x_position and comment.y_position:
-            # Use stored position (normalized 0-1)
-            x = comment.x_position * page_width
-            y = comment.y_position * page_height
-        else:
-            # Place markers along left margin
-            x = 15
-            y = page_height - 50 - (i * 25)
-            if y < 30:
-                continue
+        if y - row_h < 40:
+            # New page
+            c.showPage()
+            y = h - 50
 
-        # Draw circle marker
-        c.setFillColor(color)
-        c.circle(x, y, 6, fill=True, stroke=False)
+            # Repeat header
+            c.setFillColor(Color(0.12, 0.18, 0.30))
+            c.rect(40, y - 2, w - 80, 18, fill=True, stroke=False)
+            c.setFillColor(Color(1, 1, 1))
+            c.setFont("Helvetica-Bold", 8)
+            c.drawString(50, y + 3, "#")
+            c.drawString(68, y + 3, "SEVERITY")
+            c.drawString(130, y + 3, "STATUS")
+            c.drawString(190, y + 3, "REFERENCE")
+            c.drawString(290, y + 3, "COMMENT")
+            y -= 16
 
-        # Number in circle
-        c.setFillColor(Color(1, 1, 1))
+        # Row background
+        c.setFillColor(row_colors[i % 2])
+        c.rect(40, y - row_h + 12, w - 80, row_h, fill=True, stroke=False)
+
+        # Row number
+        c.setFillColor(Color(0.3, 0.3, 0.3))
+        c.setFont("Helvetica", 7)
+        c.drawString(50, y, str(i + 1))
+
+        # Severity (colored)
+        sev_color = severity_text_colors.get(co.severity, Color(0.3, 0.3, 0.3))
+        c.setFillColor(sev_color)
         c.setFont("Helvetica-Bold", 7)
-        c.drawCentredString(x, y - 2.5, str(i + 1))
+        c.drawString(68, y, co.severity.upper())
+
+        # Status
+        c.setFillColor(Color(0.3, 0.3, 0.3))
+        c.setFont("Helvetica", 7)
+        c.drawString(130, y, co.status.upper())
+
+        # Reference
+        c.setFillColor(Color(0.3, 0.3, 0.3))
+        c.setFont("Helvetica", 6.5)
+        c.drawString(190, y, (co.reference_code or "")[:20])
+
+        # Comment text
+        c.setFillColor(Color(0.1, 0.1, 0.1))
+        c.setFont("Helvetica", 7)
+        for j, line in enumerate(text_lines[:3]):
+            c.drawString(290, y - (j * 10), line)
+
+        y -= row_h
+
+    c.save()
+    buffer.seek(0)
+    return buffer
 
 
 def _wrap_text(text: str, max_width: float, font_size: float) -> list[str]:
     """Simple text wrapping based on approximate character width."""
-    chars_per_line = int(max_width / (font_size * 0.5))
+    chars_per_line = int(max_width / (font_size * 0.45))
     lines = []
     words = text.split()
     current_line = ""
@@ -206,76 +367,3 @@ def _wrap_text(text: str, max_width: float, font_size: float) -> list[str]:
     if current_line:
         lines.append(current_line)
     return lines
-
-
-def _create_summary_page(comments: list, submittal) -> BytesIO:
-    """Create a summary page listing all comments."""
-    buffer = BytesIO()
-    c = canvas.Canvas(buffer, pagesize=letter)
-    width, height = letter
-
-    # Title
-    c.setFont("Helvetica-Bold", 14)
-    c.drawString(50, height - 50, "SUBMITTAL REVIEW COMMENT SUMMARY")
-
-    c.setFont("Helvetica", 10)
-    c.drawString(50, height - 70, f"Submittal: {submittal.title}")
-    c.drawString(50, height - 85, f"Equipment Type: {submittal.equipment_type.replace('_', ' ').title()}")
-    if submittal.manufacturer:
-        c.drawString(50, height - 100, f"Manufacturer: {submittal.manufacturer}")
-    if submittal.submittal_number:
-        c.drawString(350, height - 70, f"Submittal No: {submittal.submittal_number}")
-
-    c.setLineWidth(1)
-    c.line(50, height - 110, width - 50, height - 110)
-
-    # Stats
-    y = height - 130
-    total = len(comments)
-    critical = sum(1 for co in comments if co.severity == "critical")
-    major = sum(1 for co in comments if co.severity == "major")
-    minor = sum(1 for co in comments if co.severity == "minor")
-    open_count = sum(1 for co in comments if co.status == "open")
-
-    c.setFont("Helvetica-Bold", 10)
-    c.drawString(50, y, f"Total Comments: {total}")
-    c.drawString(200, y, f"Critical: {critical}")
-    c.drawString(300, y, f"Major: {major}")
-    c.drawString(400, y, f"Minor: {minor}")
-    c.drawString(480, y, f"Open: {open_count}")
-
-    y -= 25
-
-    # Table header
-    c.setFont("Helvetica-Bold", 8)
-    c.drawString(50, y, "#")
-    c.drawString(65, y, "SEVERITY")
-    c.drawString(120, y, "STATUS")
-    c.drawString(170, y, "REFERENCE")
-    c.drawString(250, y, "COMMENT")
-    c.line(50, y - 3, width - 50, y - 3)
-    y -= 15
-
-    # Comments
-    c.setFont("Helvetica", 7)
-    for i, co in enumerate(comments):
-        if y < 50:
-            c.showPage()
-            y = height - 50
-            c.setFont("Helvetica", 7)
-
-        c.drawString(50, y, str(i + 1))
-        c.drawString(65, y, co.severity.upper())
-        c.drawString(120, y, co.status.upper())
-        c.drawString(170, y, (co.reference_code or "")[:15])
-
-        # Wrap comment text
-        text_lines = _wrap_text(co.comment_text[:300], 300, 7)
-        for j, line in enumerate(text_lines[:3]):
-            c.drawString(250, y - (j * 9), line)
-
-        y -= max(12, len(text_lines[:3]) * 9 + 5)
-
-    c.save()
-    buffer.seek(0)
-    return buffer
