@@ -1,16 +1,87 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getProject, getSubmittals, uploadSubmittal, getEquipmentTypes } from '../api/client';
 import type { Project, Submittal } from '../types';
 
-const STATUS_COLORS: Record<string, string> = {
-  uploaded: 'bg-gray-200 text-gray-700',
-  reviewing: 'bg-yellow-100 text-yellow-800',
-  reviewed: 'bg-blue-100 text-blue-800',
-  approved: 'bg-green-100 text-green-800',
-  rejected: 'bg-red-100 text-red-800',
-  revise_resubmit: 'bg-orange-100 text-orange-800',
+// --- Helpers ---
+
+function timeAgo(dateStr: string): string {
+  const now = new Date();
+  const date = new Date(dateStr);
+  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  return `${Math.floor(months / 12)}y ago`;
+}
+
+function formatFileSize(bytes?: number): string {
+  if (!bytes) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// --- Equipment type config ---
+
+const EQUIPMENT_CONFIG: Record<string, { icon: string; color: string; bg: string; border: string }> = {
+  switchgear:     { icon: '⚡', color: 'text-amber-700',   bg: 'bg-amber-50',   border: 'border-amber-200' },
+  transformer:    { icon: '🔌', color: 'text-blue-700',    bg: 'bg-blue-50',    border: 'border-blue-200' },
+  panelboard:     { icon: '📋', color: 'text-violet-700',  bg: 'bg-violet-50',  border: 'border-violet-200' },
+  ats:            { icon: '🔄', color: 'text-teal-700',    bg: 'bg-teal-50',    border: 'border-teal-200' },
+  ups:            { icon: '🔋', color: 'text-green-700',   bg: 'bg-green-50',   border: 'border-green-200' },
+  generator:      { icon: '⚙️', color: 'text-slate-700',   bg: 'bg-slate-50',   border: 'border-slate-200' },
+  busway:         { icon: '🔗', color: 'text-orange-700',  bg: 'bg-orange-50',  border: 'border-orange-200' },
+  cable:          { icon: '🪢', color: 'text-rose-700',    bg: 'bg-rose-50',    border: 'border-rose-200' },
+  cooling:        { icon: '❄️', color: 'text-cyan-700',    bg: 'bg-cyan-50',    border: 'border-cyan-200' },
+  fire_protection:{ icon: '🔥', color: 'text-red-700',     bg: 'bg-red-50',     border: 'border-red-200' },
+  monitoring:     { icon: '📡', color: 'text-indigo-700',  bg: 'bg-indigo-50',  border: 'border-indigo-200' },
+  other:          { icon: '📦', color: 'text-gray-700',    bg: 'bg-gray-50',    border: 'border-gray-200' },
 };
+
+function getEquipmentStyle(type: string) {
+  return EQUIPMENT_CONFIG[type] || EQUIPMENT_CONFIG.other;
+}
+
+// --- Status config ---
+
+const STATUS_STYLES: Record<string, { dot: string; text: string; bg: string; label: string }> = {
+  uploaded:         { dot: 'bg-gray-400',   text: 'text-gray-700',   bg: 'bg-gray-50',    label: 'Uploaded' },
+  reviewing:        { dot: 'bg-yellow-500', text: 'text-yellow-700', bg: 'bg-yellow-50',  label: 'In Review' },
+  reviewed:         { dot: 'bg-blue-500',   text: 'text-blue-700',   bg: 'bg-blue-50',    label: 'Reviewed' },
+  approved:         { dot: 'bg-emerald-500',text: 'text-emerald-700',bg: 'bg-emerald-50', label: 'Approved' },
+  rejected:         { dot: 'bg-red-500',    text: 'text-red-700',    bg: 'bg-red-50',     label: 'Rejected' },
+  revise_resubmit:  { dot: 'bg-orange-500', text: 'text-orange-700', bg: 'bg-orange-50',  label: 'Revise & Resubmit' },
+};
+
+function StatusBadge({ status }: { status: string }) {
+  const s = STATUS_STYLES[status] || STATUS_STYLES.uploaded;
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${s.bg} ${s.text} ring-1 ring-inset ring-current/10`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+      {s.label}
+    </span>
+  );
+}
+
+function EquipmentBadge({ type }: { type: string }) {
+  const cfg = getEquipmentStyle(type);
+  return (
+    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold border ${cfg.bg} ${cfg.color} ${cfg.border}`}>
+      <span className="text-sm leading-none">{cfg.icon}</span>
+      {type.replace(/_/g, ' ').toUpperCase()}
+    </span>
+  );
+}
+
+// --- Main Component ---
 
 export default function ProjectDetail() {
   const { projectId } = useParams();
@@ -19,6 +90,8 @@ export default function ProjectDetail() {
   const [equipmentTypes, setEquipmentTypes] = useState<string[]>([]);
   const [showUpload, setShowUpload] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState({
     title: '', equipment_type: 'switchgear', submittal_number: '',
     manufacturer: '', model_number: '', spec_section: '',
@@ -29,6 +102,15 @@ export default function ProjectDetail() {
   useEffect(() => {
     if (projectId) loadData();
   }, [projectId]);
+
+  // Close modal on Escape key
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showUpload) setShowUpload(false);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [showUpload]);
 
   const loadData = async () => {
     try {
@@ -43,6 +125,11 @@ export default function ProjectDetail() {
     } catch (e) {
       console.error('Failed to load project', e);
     }
+  };
+
+  const resetForm = () => {
+    setFile(null);
+    setForm({ title: '', equipment_type: 'switchgear', submittal_number: '', manufacturer: '', model_number: '', spec_section: '', submitted_by: '', contractor: '' });
   };
 
   const handleUpload = async (e: React.FormEvent) => {
@@ -60,8 +147,7 @@ export default function ProjectDetail() {
     try {
       await uploadSubmittal(formData);
       setShowUpload(false);
-      setFile(null);
-      setForm({ title: '', equipment_type: 'switchgear', submittal_number: '', manufacturer: '', model_number: '', spec_section: '', submitted_by: '', contractor: '' });
+      resetForm();
       loadData();
     } catch (e) {
       console.error('Upload failed', e);
@@ -70,91 +156,373 @@ export default function ProjectDetail() {
     }
   };
 
-  if (!project) return <div className="text-center py-12 text-gray-400">Loading...</div>;
+  const handleDrag = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === 'dragenter' || e.type === 'dragover') {
+      setDragActive(true);
+    } else if (e.type === 'dragleave') {
+      setDragActive(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    const dropped = e.dataTransfer.files?.[0];
+    if (dropped && dropped.type === 'application/pdf') {
+      setFile(dropped);
+    }
+  }, []);
+
+  // --- Stats ---
+  const totalComments = submittals.reduce((sum, s) => sum + s.open_comments, 0);
+  const reviewedCount = submittals.filter(s => ['reviewed', 'approved', 'rejected', 'revise_resubmit'].includes(s.status)).length;
+
+  // --- Loading state ---
+  if (!project) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-gray-300 border-t-blue-600" />
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <Link to="/" className="text-sm text-blue-600 hover:underline">&larr; All Projects</Link>
-          <h2 className="text-2xl font-bold mt-1">{project.name}</h2>
-          <div className="text-sm text-gray-500 flex gap-4">
-            {project.client && <span>Client: {project.client}</span>}
-            {project.tier_level && <span>Tier {project.tier_level}</span>}
+    <div className="max-w-6xl mx-auto space-y-8">
+      {/* Breadcrumb */}
+      <nav className="flex items-center gap-2 text-sm text-gray-500">
+        <Link to="/" className="hover:text-gray-900 transition-colors flex items-center gap-1">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m2.25 12 8.954-8.955a1.126 1.126 0 0 1 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" /></svg>
+          Projects
+        </Link>
+        <svg className="w-3.5 h-3.5 text-gray-300" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
+        <span className="text-gray-900 font-medium truncate max-w-xs">{project.name}</span>
+      </nav>
+
+      {/* Header Card */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold text-gray-900 tracking-tight">{project.name}</h1>
+            {project.description && (
+              <p className="mt-1 text-sm text-gray-500">{project.description}</p>
+            )}
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              {project.client && (
+                <span className="inline-flex items-center gap-1.5 text-sm text-gray-600">
+                  <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 21h19.5M3.75 3v18h16.5V3H3.75Zm3 3.75h3v3h-3v-3Zm6.75 0h3v3h-3v-3Zm-6.75 6h3v3h-3v-3Zm6.75 0h3v3h-3v-3Z" /></svg>
+                  {project.client}
+                </span>
+              )}
+              {project.location && (
+                <span className="inline-flex items-center gap-1.5 text-sm text-gray-600">
+                  <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" /></svg>
+                  {project.location}
+                </span>
+              )}
+              {project.tier_level && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                  Tier {project.tier_level}
+                </span>
+              )}
+            </div>
           </div>
+          <button
+            onClick={() => setShowUpload(true)}
+            className="shrink-0 inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold shadow-sm hover:bg-blue-700 active:bg-blue-800 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+            Upload Submittal
+          </button>
         </div>
-        <button
-          onClick={() => setShowUpload(!showUpload)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
-        >
-          + Upload Submittal
-        </button>
+
+        {/* Stats Row */}
+        {submittals.length > 0 && (
+          <div className="mt-6 pt-5 border-t border-gray-100 grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="text-center">
+              <div className="text-2xl font-bold text-gray-900">{submittals.length}</div>
+              <div className="text-xs text-gray-500 font-medium mt-0.5">Submittals</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-gray-900">{reviewedCount}</div>
+              <div className="text-xs text-gray-500 font-medium mt-0.5">Reviewed</div>
+            </div>
+            <div className="text-center">
+              <div className={`text-2xl font-bold ${totalComments > 0 ? 'text-orange-600' : 'text-gray-900'}`}>{totalComments}</div>
+              <div className="text-xs text-gray-500 font-medium mt-0.5">Open Comments</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-gray-900">
+                {submittals.reduce((sum, s) => sum + (s.page_count || 0), 0).toLocaleString()}
+              </div>
+              <div className="text-xs text-gray-500 font-medium mt-0.5">Total Pages</div>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Upload Form */}
+      {/* Upload Modal Overlay */}
       {showUpload && (
-        <form onSubmit={handleUpload} className="bg-white rounded-lg shadow p-4 space-y-3">
-          <h3 className="font-semibold">Upload New Submittal</h3>
-          <div className="grid grid-cols-2 gap-3">
-            <input placeholder="Title *" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required className="border rounded px-3 py-2 text-sm" />
-            <select value={form.equipment_type} onChange={(e) => setForm({ ...form, equipment_type: e.target.value })} className="border rounded px-3 py-2 text-sm">
-              {equipmentTypes.map((t) => (
-                <option key={t} value={t}>{t.replace('_', ' ').toUpperCase()}</option>
-              ))}
-            </select>
-            <input placeholder="Submittal Number" value={form.submittal_number} onChange={(e) => setForm({ ...form, submittal_number: e.target.value })} className="border rounded px-3 py-2 text-sm" />
-            <input placeholder="Manufacturer" value={form.manufacturer} onChange={(e) => setForm({ ...form, manufacturer: e.target.value })} className="border rounded px-3 py-2 text-sm" />
-            <input placeholder="Model Number" value={form.model_number} onChange={(e) => setForm({ ...form, model_number: e.target.value })} className="border rounded px-3 py-2 text-sm" />
-            <input placeholder="Spec Section" value={form.spec_section} onChange={(e) => setForm({ ...form, spec_section: e.target.value })} className="border rounded px-3 py-2 text-sm" />
-            <input placeholder="Submitted By" value={form.submitted_by} onChange={(e) => setForm({ ...form, submitted_by: e.target.value })} className="border rounded px-3 py-2 text-sm" />
-            <input placeholder="Contractor" value={form.contractor} onChange={(e) => setForm({ ...form, contractor: e.target.value })} className="border rounded px-3 py-2 text-sm" />
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm transition-opacity" onClick={() => !uploading && setShowUpload(false)} />
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl ring-1 ring-gray-200">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Upload New Submittal</h3>
+                  <p className="text-sm text-gray-500 mt-0.5">Add a submittal document for automated review</p>
+                </div>
+                <button
+                  onClick={() => !uploading && setShowUpload(false)}
+                  className="rounded-lg p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <form onSubmit={handleUpload} className="p-6 space-y-5">
+                {/* Drag & Drop Area */}
+                <div
+                  onDragEnter={handleDrag}
+                  onDragLeave={handleDrag}
+                  onDragOver={handleDrag}
+                  onDrop={handleDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`relative cursor-pointer rounded-xl border-2 border-dashed p-8 text-center transition-all
+                    ${dragActive
+                      ? 'border-blue-400 bg-blue-50 ring-4 ring-blue-100'
+                      : file
+                        ? 'border-emerald-300 bg-emerald-50'
+                        : 'border-gray-200 bg-gray-50 hover:border-gray-300 hover:bg-gray-100'
+                    }`}
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf"
+                    onChange={(e) => setFile(e.target.files?.[0] || null)}
+                    className="hidden"
+                  />
+                  {file ? (
+                    <div className="space-y-2">
+                      <div className="mx-auto w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center">
+                        <svg className="w-6 h-6 text-emerald-600" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
+                      </div>
+                      <p className="text-sm font-semibold text-gray-900">{file.name}</p>
+                      <p className="text-xs text-gray-500">{formatFileSize(file.size)} — Click or drag to replace</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="mx-auto w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center">
+                        <svg className="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" /></svg>
+                      </div>
+                      <p className="text-sm font-semibold text-gray-700">Drop your PDF here, or click to browse</p>
+                      <p className="text-xs text-gray-400">PDF files only</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Form Fields */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">Title <span className="text-red-400">*</span></label>
+                    <input
+                      placeholder="e.g. Main Switchgear MSB-1"
+                      value={form.title}
+                      onChange={(e) => setForm({ ...form, title: e.target.value })}
+                      required
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
+                    />
+                  </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">Equipment Type</label>
+                    <select
+                      value={form.equipment_type}
+                      onChange={(e) => setForm({ ...form, equipment_type: e.target.value })}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
+                    >
+                      {equipmentTypes.map((t) => (
+                        <option key={t} value={t}>{t.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">Submittal Number</label>
+                    <input
+                      placeholder="e.g. E-001"
+                      value={form.submittal_number}
+                      onChange={(e) => setForm({ ...form, submittal_number: e.target.value })}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">Manufacturer</label>
+                    <input
+                      placeholder="e.g. ABB"
+                      value={form.manufacturer}
+                      onChange={(e) => setForm({ ...form, manufacturer: e.target.value })}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">Model Number</label>
+                    <input
+                      placeholder="e.g. Emax 2"
+                      value={form.model_number}
+                      onChange={(e) => setForm({ ...form, model_number: e.target.value })}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">Spec Section</label>
+                    <input
+                      placeholder="e.g. 26 24 16"
+                      value={form.spec_section}
+                      onChange={(e) => setForm({ ...form, spec_section: e.target.value })}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">Submitted By</label>
+                    <input
+                      placeholder="Name"
+                      value={form.submitted_by}
+                      onChange={(e) => setForm({ ...form, submitted_by: e.target.value })}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">Contractor</label>
+                    <input
+                      placeholder="Company name"
+                      value={form.contractor}
+                      onChange={(e) => setForm({ ...form, contractor: e.target.value })}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
+                    />
+                  </div>
+                </div>
+
+                {/* Modal Footer */}
+                <div className="flex items-center justify-end gap-3 pt-3 border-t border-gray-100">
+                  <button
+                    type="button"
+                    onClick={() => { setShowUpload(false); resetForm(); }}
+                    disabled={uploading}
+                    className="px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={uploading || !file || !form.title}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-sm hover:bg-blue-700 active:bg-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                  >
+                    {uploading ? (
+                      <>
+                        <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                        Uploading...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" /></svg>
+                        Upload & Create
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-          <div className="border-2 border-dashed rounded-lg p-4 text-center">
-            <input type="file" accept=".pdf" onChange={(e) => setFile(e.target.files?.[0] || null)} className="text-sm" />
-            <p className="text-xs text-gray-400 mt-1">PDF files only</p>
-          </div>
-          <div className="flex gap-2">
-            <button type="submit" disabled={uploading || !file} className="px-4 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700 disabled:opacity-50">
-              {uploading ? 'Uploading...' : 'Upload & Create'}
-            </button>
-            <button type="button" onClick={() => setShowUpload(false)} className="px-4 py-2 bg-gray-200 rounded text-sm">Cancel</button>
-          </div>
-        </form>
+        </div>
       )}
 
-      {/* Submittals List */}
-      <div className="space-y-3">
-        {submittals.map((s) => (
-          <Link
-            key={s.id}
-            to={`/submittal/${s.id}`}
-            className="bg-white rounded-lg shadow p-4 hover:shadow-md transition-shadow flex items-center justify-between block"
-          >
-            <div className="flex-1">
-              <div className="flex items-center gap-3">
-                <h3 className="font-semibold">{s.title}</h3>
-                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[s.status] || 'bg-gray-100'}`}>
-                  {s.status.replace('_', ' ')}
-                </span>
-              </div>
-              <div className="text-sm text-gray-500 flex gap-4 mt-1">
-                <span className="font-medium text-blue-600">{s.equipment_type.replace('_', ' ').toUpperCase()}</span>
-                {s.submittal_number && <span>#{s.submittal_number}</span>}
-                {s.manufacturer && <span>{s.manufacturer}</span>}
-                {s.contractor && <span>Contractor: {s.contractor}</span>}
-              </div>
+      {/* Submittals Section */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">
+            Submittals
+            {submittals.length > 0 && (
+              <span className="ml-2 text-sm font-normal text-gray-400">({submittals.length})</span>
+            )}
+          </h2>
+        </div>
+
+        {submittals.length === 0 ? (
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm py-16 text-center">
+            <div className="mx-auto w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mb-4">
+              <svg className="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg>
             </div>
-            <div className="text-right text-sm">
-              {s.open_comments > 0 && (
-                <div className="text-orange-600 font-medium">{s.open_comments} open comments</div>
-              )}
-              {s.page_count && <div className="text-gray-400">{s.page_count} pages</div>}
-            </div>
-          </Link>
-        ))}
-        {submittals.length === 0 && (
-          <div className="text-center py-12 text-gray-400">No submittals yet. Upload one to begin review.</div>
+            <h3 className="text-sm font-semibold text-gray-900">No submittals yet</h3>
+            <p className="text-sm text-gray-500 mt-1 mb-4">Upload a submittal PDF to begin automated review.</p>
+            <button
+              onClick={() => setShowUpload(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+              Upload your first submittal
+            </button>
+          </div>
+        ) : (
+          <div className="grid gap-3">
+            {submittals.map((s) => (
+              <Link
+                key={s.id}
+                to={`/submittal/${s.id}`}
+                className="group bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md hover:border-gray-300 transition-all p-5 flex items-center gap-5"
+              >
+                {/* Equipment Icon */}
+                <div className={`shrink-0 w-11 h-11 rounded-xl flex items-center justify-center text-lg ${getEquipmentStyle(s.equipment_type).bg} ${getEquipmentStyle(s.equipment_type).border} border`}>
+                  {getEquipmentStyle(s.equipment_type).icon}
+                </div>
+
+                {/* Main Info */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <h3 className="text-sm font-semibold text-gray-900 group-hover:text-blue-600 transition-colors truncate">
+                      {s.title}
+                    </h3>
+                    <StatusBadge status={s.status} />
+                  </div>
+                  <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                    <EquipmentBadge type={s.equipment_type} />
+                    {s.submittal_number && (
+                      <span className="text-xs text-gray-500 font-mono bg-gray-100 px-1.5 py-0.5 rounded">#{s.submittal_number}</span>
+                    )}
+                    {s.manufacturer && (
+                      <span className="text-xs text-gray-500">{s.manufacturer}</span>
+                    )}
+                    {s.contractor && (
+                      <span className="text-xs text-gray-400">via {s.contractor}</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right Side Stats */}
+                <div className="shrink-0 flex items-center gap-5 text-right">
+                  {s.open_comments > 0 && (
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-orange-50 border border-orange-200">
+                      <svg className="w-3.5 h-3.5 text-orange-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>
+                      <span className="text-xs font-semibold text-orange-700">{s.open_comments}</span>
+                    </div>
+                  )}
+                  <div className="text-right">
+                    {s.page_count && (
+                      <div className="text-xs text-gray-500 font-medium">{s.page_count.toLocaleString()} pg</div>
+                    )}
+                    {s.file_size && (
+                      <div className="text-xs text-gray-400">{formatFileSize(s.file_size)}</div>
+                    )}
+                  </div>
+                  <div className="text-xs text-gray-400 whitespace-nowrap">{timeAgo(s.created_at)}</div>
+                  <svg className="w-4 h-4 text-gray-300 group-hover:text-blue-500 transition-colors shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
+                </div>
+              </Link>
+            ))}
+          </div>
         )}
       </div>
     </div>
