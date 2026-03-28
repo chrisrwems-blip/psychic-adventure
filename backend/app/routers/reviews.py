@@ -2,6 +2,7 @@ import os
 import shutil
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -9,6 +10,7 @@ from app.models.database_models import ReviewResult, Submittal
 from app.models.schemas import ReviewResultResponse
 from app.services.review_service import run_review
 from app.services.full_review_service import run_full_review
+from app.services.report_generator import generate_review_report
 from app.services.revision_diff import compare_revisions
 from app.review_engine.registry import get_available_equipment_types
 
@@ -49,6 +51,45 @@ def get_review_results(submittal_id: int, db: Session = Depends(get_db)):
         .all()
     )
     return results
+
+
+@router.get("/{submittal_id}/report")
+def download_review_report(submittal_id: int, db: Session = Depends(get_db)):
+    """Generate and download a professional PDF review report.
+
+    This is a standalone report document (not the marked-up submittal).
+    Contains cover page, executive summary, jurisdiction, equipment table,
+    findings by severity, SLD cross-check, and cross-reference results.
+    """
+    submittal = db.query(Submittal).filter(Submittal.id == submittal_id).first()
+    if not submittal:
+        raise HTTPException(status_code=404, detail="Submittal not found")
+
+    # Check that a review has been run
+    result_count = db.query(ReviewResult).filter(
+        ReviewResult.submittal_id == submittal_id
+    ).count()
+    if result_count == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="No review results found. Run a review first before generating a report.",
+        )
+
+    try:
+        report_path = generate_review_report(db, submittal_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Report generation failed: {e}")
+
+    if not os.path.exists(report_path):
+        raise HTTPException(status_code=500, detail="Report file was not created")
+
+    filename = os.path.basename(report_path)
+    return FileResponse(
+        path=report_path,
+        media_type="application/pdf",
+        filename=filename,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/{submittal_id}/diagnose")
