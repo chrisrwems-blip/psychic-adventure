@@ -23,6 +23,7 @@ from app.services.topology import build_topology
 from app.services.jurisdiction import detect_jurisdiction
 from app.services.sld_schedule_crosscheck import extract_schedule_entries, crosscheck_sld_vs_schedule
 from app.services.naming_checker import check_naming_consistency
+from app.services.deep_checks import run_deep_equipment_checks
 
 
 # Checks that don't apply to data center interiors
@@ -191,7 +192,9 @@ def run_full_review(db: Session, submittal_id: int, has_spec: bool = False) -> d
     sld_entries, schedule_entries = extract_schedule_entries(pages)
     sld_xcheck_findings = crosscheck_sld_vs_schedule(sld_entries, schedule_entries)
     naming_findings = check_naming_consistency(pages)
+    deep_findings = run_deep_equipment_checks(all_equipment, sld_entries, schedule_entries, pages)
     sld_xcheck_findings.extend(naming_findings)
+    sld_xcheck_findings.extend(deep_findings)
 
     # --- Step 5: Cross-reference equipment (topology-aware) ---
     cross_ref_findings = run_cross_reference(all_equipment, topology, pages)
