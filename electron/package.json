@@ -1,0 +1,47 @@
+{
+  "name": "dc-submittal-review-electron",
+  "version": "1.0.0",
+  "description": "DC Submittal Review Platform - Desktop App",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "dev": "node scripts/dev.js",
+    "build": "node scripts/build-backend.js && electron-builder",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "tree-kill": "^1.2.2"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0",
+    "wait-on": "^8.0.0"
+  },
+  "build": {
+    "appId": "com.armada.dc-submittal-review",
+    "productName": "DC Submittal Review",
+    "directories": {
+      "output": "../dist/electron"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "node_modules/tree-kill/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../dist/backend",
+        "to": "backend",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": ["nsis"],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
