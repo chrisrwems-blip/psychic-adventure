@@ -189,7 +189,7 @@ export default function Dashboard() {
               <h3 className="text-sm font-semibold text-gray-700 mb-4">Open Comments by Severity</h3>
               <div className="space-y-3">
                 {Object.entries(stats.comments_by_severity).map(([severity, count]: [string, any]) => {
-                  const total = Object.values(stats.comments_by_severity).reduce((a: any, b: any) => a + b, 0) as number;
+                  const total = Object.values(stats.comments_by_severity!).reduce((a: any, b: any) => a + b, 0) as number;
                   const pct = total > 0 ? (count / total) * 100 : 0;
                   const colors: Record<string, string> = {
                     critical: 'bg-red-500', major: 'bg-orange-500',
