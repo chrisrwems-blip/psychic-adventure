@@ -11,6 +11,7 @@ from .panelboard import PanelboardChecker
 from .rpp import RPPChecker
 from .sts import STSChecker
 from .battery import BatteryChecker
+from .cooling import CoolingChecker
 
 CHECKER_REGISTRY: dict[str, type[BaseEquipmentChecker]] = {
     "switchgear": SwitchgearChecker,
@@ -26,6 +27,10 @@ CHECKER_REGISTRY: dict[str, type[BaseEquipmentChecker]] = {
     "rpp": RPPChecker,
     "sts": STSChecker,
     "battery": BatteryChecker,
+    "cooling": CoolingChecker,
+    "crac": CoolingChecker,  # alias
+    "crah": CoolingChecker,  # alias
+    "chiller": CoolingChecker,  # alias
 }
 
 
