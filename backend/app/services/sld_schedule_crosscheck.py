@@ -59,17 +59,34 @@ def crosscheck_sld_vs_schedule(sld_entries: list[ScheduleEntry],
     findings = []
 
     # Index by Q-designation
-    sld_by_q = {}
+    # Q-numbers like Q1, Q2, Q3 are reused across different panels (MDB vs MSDB vs IT MDB).
+    # Only cross-check Q-numbers that appear uniquely — if Q1 appears on 3+ different pages
+    # it's being reused and we can't match them without panel scoping.
+    from collections import Counter
+
+    sld_q_pages = Counter()
     for entry in sld_entries:
         q = _normalize_q(entry.q_designation)
         if q:
+            sld_q_pages[q] += 1
+
+    schedule_q_pages = Counter()
+    for entry in schedule_entries:
+        q = _normalize_q(entry.q_designation)
+        if q:
+            schedule_q_pages[q] += 1
+
+    # Skip Q-numbers that appear more than once on the SLD (reused across panels)
+    sld_by_q = {}
+    for entry in sld_entries:
+        q = _normalize_q(entry.q_designation)
+        if q and sld_q_pages[q] == 1:
             sld_by_q[q] = entry
 
     schedule_by_q = {}
     for entry in schedule_entries:
         q = _normalize_q(entry.q_designation)
-        if q:
-            # Keep the most detailed entry if duplicated across pages
+        if q and schedule_q_pages[q] <= 2:
             if q not in schedule_by_q or (entry.breaker_model and not schedule_by_q[q].breaker_model):
                 schedule_by_q[q] = entry
 

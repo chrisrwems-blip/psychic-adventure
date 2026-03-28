@@ -106,10 +106,16 @@ def _check_breaker_cable_sizing(equipment: list, topology: Optional[SystemTopolo
         if not trip:
             continue
 
-        # Find associated cables — same page or topology-linked
+        # Find associated cables — same page AND similar ampacity range
+        # Don't compare a 4000A main breaker against 60A branch cables
         associated_cables = [c for c in cables if c.page_number == breaker.page_number]
 
         for cable in associated_cables:
+            # Skip if cable ampacity is wildly different from breaker (probably not associated)
+            runs = int(cable.attributes.get("runs", 1)) if cable.attributes else 1
+            prelim_amp = (NEC_310_16_75C.get(_parse_conductor_size(cable.conductor_size) or "", 0) or 0) * runs
+            if prelim_amp > 0 and (prelim_amp > trip * 3 or prelim_amp < trip * 0.1):
+                continue  # Cable is way too big or small for this breaker — not associated
             size = _parse_conductor_size(cable.conductor_size)
             if not size:
                 continue
@@ -541,31 +547,42 @@ def _check_grounding_conductor(equipment: list, topology: Optional[SystemTopolog
 
         required_egc = min_egc_size(trip)
         # Look for ground conductor in associated cables
+        # Only check cables that could plausibly be associated with this breaker
         page_cables = [c for c in cables if c.page_number == bkr.page_number]
 
         for cable in page_cables:
+            # Skip cables whose phase conductor size is wildly different from what this breaker needs
+            runs = int(cable.attributes.get("runs", 1)) if cable.attributes else 1
+            size_key = _parse_conductor_size(cable.conductor_size)
+            cable_amp = (NEC_310_16_75C.get(size_key or "", 0) or 0) * runs
+            if cable_amp > 0 and (cable_amp > trip * 3 or cable_amp < trip * 0.3):
+                continue  # This cable is for a different breaker
             raw = (cable.raw_text or "").lower()
             if "cpc" in raw or "ground" in raw or "egc" in raw or "gnd" in raw:
                 # Found a ground reference — check size
                 gnd_match = re.search(r'(\d+)\s*(?:mm2|mm²)', raw)
                 if gnd_match:
                     gnd_mm2 = int(gnd_match.group(1))
-                    gnd_awg = mm2_to_awg(gnd_mm2)
-                    req_ampacity = NEC_310_16_75C.get(required_egc, 0)
-                    gnd_ampacity = NEC_310_16_75C.get(gnd_awg, 0)
+                    # Compare mm² to minimum required: convert required EGC AWG to mm²
+                    # Required EGC sizes in mm² (approximate):
+                    egc_awg_to_mm2 = {"14": 2.5, "12": 4, "10": 6, "8": 10, "6": 16, "4": 25,
+                                       "3": 35, "2": 35, "1": 50, "1/0": 50, "2/0": 70,
+                                       "3/0": 95, "4/0": 120, "250": 150, "350": 185,
+                                       "400": 240, "500": 300, "700": 400, "800": 500}
+                    required_mm2 = egc_awg_to_mm2.get(required_egc, 0)
 
-                    if gnd_ampacity < req_ampacity:
+                    if required_mm2 > 0 and gnd_mm2 < required_mm2:
                         findings.append(CrossRefFinding(
                             finding_type="egc_undersized", severity="critical",
                             equipment_1=bkr.designation, equipment_2=cable.designation,
                             page_number=bkr.page_number,
                             description=(
-                                f"Page {bkr.page_number}: {trip}A breaker requires minimum #{required_egc} "
-                                f"equipment grounding conductor per NEC 250.122. "
-                                f"Cable shows {gnd_mm2}mm² (≈#{gnd_awg}) ground — may be undersized."
+                                f"Page {bkr.page_number}: {trip}A breaker requires minimum {required_mm2}mm² "
+                                f"(#{required_egc} AWG) equipment grounding conductor per NEC 250.122. "
+                                f"Cable shows {gnd_mm2}mm² CPC — undersized."
                             ),
                             reference_code="NEC 250.122",
-                            recommendation=f"Verify ground conductor is minimum #{required_egc} Cu per NEC 250.122.",
+                            recommendation=f"Increase CPC to minimum {required_mm2}mm² (#{required_egc} Cu) per NEC 250.122.",
                         ))
 
     return findings
@@ -689,7 +706,7 @@ def _check_metric_cable_sizing(equipment: list) -> list[CrossRefFinding]:
 
         mm2 = float(size_mm2)
         awg = mm2_to_awg(mm2)
-        ampacity_per_run = mm2_ampacity_75c(mm2)
+        ampacity_per_run = mm2_ampacity(mm2)
         total_ampacity = ampacity_per_run * runs
 
         # Find breaker on same page to check sizing
@@ -725,6 +742,21 @@ def _parse_amps(val) -> Optional[int]:
         return None
     m = re.search(r'(\d+)', str(val))
     return int(m.group(1)) if m else None
+
+
+def _parse_conductor_size(val) -> Optional[str]:
+    if not val:
+        return None
+    m = re.search(r'(\d+)\s*kcmil', str(val).lower())
+    if m:
+        return m.group(1)
+    m = re.search(r'#?(\d+/\d+)\s*awg', str(val).lower())
+    if m:
+        return m.group(1)
+    m = re.search(r'#?(\d{1,2})\s*(?:awg)?', str(val).lower())
+    if m:
+        return m.group(1)
+    return None
 
 
 # ---------------------------------------------------------------------------
