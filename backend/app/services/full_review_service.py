@@ -20,6 +20,7 @@ from app.services.page_classifier import classify_all_pages, get_page_summary, P
 from app.services.equipment_extractor import extract_all_equipment, ExtractedEquipment
 from app.services.cross_reference import run_cross_reference, CrossRefFinding
 from app.services.topology import build_topology
+from app.services.jurisdiction import detect_jurisdiction
 
 
 # Checks that don't apply to data center interiors
@@ -130,6 +131,9 @@ def run_full_review(db: Session, submittal_id: int, has_spec: bool = False) -> d
     full_text = "\n".join(p["text"] for p in pages)
     global_metadata = extract_metadata(full_text)
 
+    # --- Step 1b: Detect jurisdiction (NEC vs IEC) ---
+    jurisdiction = detect_jurisdiction(pages, global_metadata)
+
     # --- Step 2: Extract all equipment ---
     all_equipment = extract_all_equipment(pages)
 
@@ -183,6 +187,47 @@ def run_full_review(db: Session, submittal_id: int, has_spec: bool = False) -> d
 
     # --- Step 5: Cross-reference equipment (topology-aware) ---
     cross_ref_findings = run_cross_reference(all_equipment, topology, pages)
+
+    # Add jurisdiction warnings as findings
+    for warning in jurisdiction.warnings:
+        cross_ref_findings.append(CrossRefFinding(
+            finding_type="jurisdiction_warning",
+            severity="critical",
+            equipment_1="System",
+            equipment_2=None,
+            page_number=0,
+            description=warning,
+            reference_code=f"{jurisdiction.code} jurisdiction detected ({jurisdiction.confidence:.0%} confidence)",
+            recommendation="Verify all equipment is listed/certified for the installation jurisdiction.",
+        ))
+
+    # Check for IEC-only equipment in NEC jurisdiction
+    if jurisdiction.code == "NEC":
+        full_text_lower = full_text.lower()
+        # Look for IEC-only certifications without corresponding UL
+        for eq in all_equipment:
+            raw = (eq.raw_text or "").lower()
+            has_iec_only = ("iec" in raw or "ce " in raw) and "ul" not in raw
+            # Only flag if this is a major piece of equipment (breaker, panel, transformer)
+            if has_iec_only and eq.equipment_type in ("breaker", "panel", "transformer"):
+                # Check if UL listing exists elsewhere for this equipment
+                model_text = eq.model or eq.designation
+                if model_text.lower() not in full_text_lower or "ul" not in full_text_lower:
+                    continue  # Can't determine — skip
+                cross_ref_findings.append(CrossRefFinding(
+                    finding_type="listing_mismatch",
+                    severity="critical",
+                    equipment_1=eq.designation,
+                    equipment_2=None,
+                    page_number=eq.page_number,
+                    description=(
+                        f"Page {eq.page_number}: {eq.designation} — IEC certification referenced but "
+                        f"no UL listing found for this specific equipment. System is 480V/60Hz (NEC jurisdiction). "
+                        f"All equipment must be UL listed or recognized for installation in the United States."
+                    ),
+                    reference_code="NEC 110.2, 110.3",
+                    recommendation="Verify UL listing for this equipment. IEC-only certification is not acceptable for NEC installations.",
+                ))
 
     # Deduplicate cross-ref by core issue
     seen_xref = set()
@@ -294,6 +339,9 @@ def run_full_review(db: Session, submittal_id: int, has_spec: bool = False) -> d
         "submittal_id": submittal_id,
         "equipment_type": submittal.equipment_type,
         "review_type": "full_package",
+        "jurisdiction": jurisdiction.code,
+        "jurisdiction_confidence": jurisdiction.confidence,
+        "jurisdiction_warnings": jurisdiction.warnings,
         "total_pages": len(pages),
         "page_breakdown": page_summary,
         "checkers_run": checkers_run,
