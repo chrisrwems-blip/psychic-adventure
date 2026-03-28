@@ -21,6 +21,8 @@ export const uploadSubmittal = (formData: FormData) =>
   api.post('/submittals/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
 export const deleteSubmittal = (id: number) => api.delete(`/submittals/${id}`);
 export const getSubmittalPdfUrl = (id: number) => `/api/submittals/${id}/pdf`;
+export const annotateSubmittal = (id: number) => api.post(`/submittals/${id}/annotate`);
+export const getAnnotatedPdfUrl = (id: number) => `/api/submittals/${id}/annotated-pdf`;
 
 // --- Reviews ---
 export const runReview = (submittalId: number) => api.post(`/reviews/${submittalId}/run`);

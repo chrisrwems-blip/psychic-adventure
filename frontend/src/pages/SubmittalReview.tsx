@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import {
   getSubmittal, runReview, getReviewResults, getComments,
   addComment, updateComment, generateEmail, getEmails,
-  getSubmittalPdfUrl,
+  getSubmittalPdfUrl, annotateSubmittal, getAnnotatedPdfUrl,
 } from '../api/client';
 import type { Submittal, ReviewResult, ReviewComment, GeneratedEmail } from '../types';
 
@@ -28,6 +28,7 @@ export default function SubmittalReview() {
   const [emails, setEmails] = useState<GeneratedEmail[]>([]);
   const [activeTab, setActiveTab] = useState<'review' | 'comments' | 'email' | 'pdf'>('review');
   const [reviewing, setReviewing] = useState(false);
+  const [annotating, setAnnotating] = useState(false);
   const [reviewSummary, setReviewSummary] = useState<any>(null);
   const [newComment, setNewComment] = useState({ comment_text: '', severity: 'info', reference_code: '' });
   const [emailForm, setEmailForm] = useState({ email_type: 'clarification', recipients: '', additional_notes: '' });
@@ -62,6 +63,20 @@ export default function SubmittalReview() {
       console.error('Review failed', e);
     } finally {
       setReviewing(false);
+    }
+  };
+
+  const handleAnnotate = async () => {
+    setAnnotating(true);
+    try {
+      await annotateSubmittal(Number(submittalId));
+      loadData();
+      // Open annotated PDF in new tab
+      window.open(getAnnotatedPdfUrl(Number(submittalId)), '_blank');
+    } catch (e) {
+      console.error('Annotation failed', e);
+    } finally {
+      setAnnotating(false);
     }
   };
 
@@ -128,13 +143,22 @@ export default function SubmittalReview() {
             <span className="px-2 py-0.5 rounded-full text-xs bg-gray-200">{submittal.status}</span>
           </div>
         </div>
-        <button
-          onClick={handleRunReview}
-          disabled={reviewing}
-          className="px-6 py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50"
-        >
-          {reviewing ? 'Reviewing...' : 'Run Review'}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleRunReview}
+            disabled={reviewing}
+            className="px-6 py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50"
+          >
+            {reviewing ? 'Reviewing...' : 'Run Review'}
+          </button>
+          <button
+            onClick={handleAnnotate}
+            disabled={annotating || comments.length === 0}
+            className="px-6 py-2.5 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50"
+          >
+            {annotating ? 'Marking Up...' : 'Mark Up PDF'}
+          </button>
+        </div>
       </div>
 
       {/* Review Summary */}
