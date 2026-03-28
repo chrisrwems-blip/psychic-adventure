@@ -36,6 +36,7 @@ export default function SubmittalReview() {
   const [reviewSort, setReviewSort] = useState<'category' | 'severity' | 'status'>('severity');
   const [reviewFilter, setReviewFilter] = useState<'all' | 'fail' | 'pass' | 'review'>('all');
   const [commentSort, setCommentSort] = useState<'severity' | 'status' | 'date'>('severity');
+  const [expandedResult, setExpandedResult] = useState<number | null>(null);
   const [emailForm, setEmailForm] = useState({ email_type: 'clarification', recipients: '', additional_notes: '' });
   const [selectedEmail, setSelectedEmail] = useState<GeneratedEmail | null>(null);
 
@@ -346,15 +347,79 @@ export default function SubmittalReview() {
               <div className="divide-y">
                 {items.map((r) => {
                   const status = RESULT_ICONS[r.passed] || RESULT_ICONS[-1];
+                  const isExpanded = expandedResult === r.id;
+
+                  // Parse details: split on " | Recommendation: " if present
+                  const detailParts = (r.details || '').split(' | Recommendation: ');
+                  const mainDetail = detailParts[0];
+                  const recommendation = detailParts[1] || null;
+
+                  // Extract page number from detail text
+                  const pageMatch = mainDetail.match(/Page (\d+)/);
+                  const pageNum = pageMatch ? parseInt(pageMatch[1]) : null;
+
                   return (
-                    <div key={r.id} className="px-4 py-3 flex items-start gap-3">
-                      <span className={`px-2 py-0.5 rounded text-xs font-bold ${status.color}`}>{status.icon}</span>
-                      <div className="flex-1">
-                        <div className="text-sm font-medium">{r.check_name}</div>
-                        {r.details && <div className="text-xs text-gray-500 mt-0.5">{r.details}</div>}
+                    <div key={r.id}
+                      className={`px-4 py-3 cursor-pointer transition-colors ${isExpanded ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                      onClick={() => setExpandedResult(isExpanded ? null : r.id)}
+                    >
+                      <div className="flex items-start gap-3">
+                        <span className={`px-2 py-0.5 rounded text-xs font-bold ${status.color}`}>{status.icon}</span>
+                        <div className="flex-1">
+                          <div className="text-sm font-medium">{r.check_name}</div>
+                          {!isExpanded && mainDetail && <div className="text-xs text-gray-500 mt-0.5 line-clamp-1">{mainDetail}</div>}
+                        </div>
+                        {r.reference_standard && (
+                          <span className="text-xs text-gray-400 whitespace-nowrap">{r.reference_standard}</span>
+                        )}
+                        <span className="text-xs text-gray-300">{isExpanded ? '▼' : '▶'}</span>
                       </div>
-                      {r.reference_standard && (
-                        <span className="text-xs text-gray-400 whitespace-nowrap">{r.reference_standard}</span>
+
+                      {isExpanded && (
+                        <div className="mt-3 ml-8 space-y-3">
+                          {/* Finding Details */}
+                          <div className="bg-white border rounded p-3">
+                            <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Finding Details</div>
+                            <div className="text-sm text-gray-700">{mainDetail}</div>
+                          </div>
+
+                          {/* NEC Code Reference */}
+                          {r.reference_standard && (
+                            <div className="bg-amber-50 border border-amber-200 rounded p-3">
+                              <div className="text-xs font-semibold text-amber-700 uppercase mb-1">Code Reference</div>
+                              <div className="text-sm text-amber-900 font-medium">{r.reference_standard}</div>
+                            </div>
+                          )}
+
+                          {/* Recommendation */}
+                          {recommendation && (
+                            <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                              <div className="text-xs font-semibold text-blue-700 uppercase mb-1">Recommended Action</div>
+                              <div className="text-sm text-blue-900">{recommendation}</div>
+                            </div>
+                          )}
+
+                          {/* Page link */}
+                          {pageNum && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveTab('pdf');
+                                // PDF viewers can jump to page with #page=N
+                                setTimeout(() => {
+                                  const iframe = document.querySelector('iframe[title]') as HTMLIFrameElement;
+                                  if (iframe) {
+                                    const baseUrl = iframe.src.split('#')[0];
+                                    iframe.src = baseUrl + '#page=' + pageNum;
+                                  }
+                                }, 100);
+                              }}
+                              className="text-xs text-blue-600 hover:underline font-medium"
+                            >
+                              View Page {pageNum} in PDF →
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   );
