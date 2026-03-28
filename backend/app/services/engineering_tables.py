@@ -187,7 +187,7 @@ def transformer_fla(kva: float, voltage: float, phases: int = 3) -> float:
         return (kva * 1000) / voltage
 
 
-def transformer_max_primary_ocpd(kva: float, primary_voltage: float, has_secondary_protection: bool = True) -> int:
+def transformer_max_primary_ocpd(kva: float, primary_voltage: float, has_secondary_protection: bool = False) -> int:
     """Calculate maximum primary overcurrent protection per NEC 450.3(B)."""
     fla = transformer_fla(kva, primary_voltage)
     if has_secondary_protection:
