@@ -301,6 +301,7 @@ export default function SubmittalReview() {
                   a.href = url;
                   a.download = `stamped_submittal.pdf`;
                   a.click();
+                  setTimeout(() => URL.revokeObjectURL(url), 1000);
                 });
             }}
             className="mt-4 space-y-3"
@@ -887,7 +888,7 @@ export default function SubmittalReview() {
             </div>
           </div>
           <iframe
-            key={`pdf-${viewingMarkup}-${pdfPage}`}
+            key={`pdf-${viewingMarkup}`}
             src={`${viewingMarkup && hasAnnotated ? getAnnotatedPdfUrl(Number(submittalId)) : getSubmittalPdfUrl(Number(submittalId))}#page=${pdfPage}`}
             className="w-full rounded-b-lg"
             style={{ height: '80vh' }}

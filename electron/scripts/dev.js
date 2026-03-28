@@ -4,13 +4,8 @@
  * Waits for both servers to be ready before launching Electron.
  */
 const { spawn } = require('child_process');
-const path = require('path');
 const treeKill = require('tree-kill');
-
-const ROOT = path.resolve(__dirname, '..', '..');
-const BACKEND_DIR = path.join(ROOT, 'backend');
-const FRONTEND_DIR = path.join(ROOT, 'frontend');
-const ELECTRON_DIR = path.join(ROOT, 'electron');
+const { BACKEND_DIR, FRONTEND_DIR, ELECTRON_DIR } = require('../lib/constants');
 
 const isWindows = process.platform === 'win32';
 const pythonCmd = isWindows ? 'python' : 'python3';
@@ -48,7 +43,7 @@ process.on('SIGTERM', cleanup);
 console.log('[dev] Starting Python backend...');
 spawnTracked(pythonCmd, [
   '-m', 'uvicorn', 'app.main:app',
-  '--host', '0.0.0.0',
+  '--host', '127.0.0.1',
   '--port', '8000',
   '--reload',
 ], { cwd: BACKEND_DIR });
