@@ -206,10 +206,10 @@ def trigger_vision_analysis(submittal_id: int, db: Session = Depends(get_db)):
     if not submittal:
         raise HTTPException(status_code=404, detail="Submittal not found")
 
-    from app.services.vision_batch import start_vision_analysis, is_vision_available
-    from app.services.vision_analyzer import is_vision_available as check_vision
+    from app.services.vision_batch import start_vision_analysis
+    from app.services.vision_analyzer import is_vision_available
 
-    vision_status = check_vision()
+    vision_status = is_vision_available()
     if not vision_status["available"]:
         return {"status": "unavailable", "message": vision_status["details"]}
 

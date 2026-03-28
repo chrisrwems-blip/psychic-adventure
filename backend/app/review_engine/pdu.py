@@ -52,7 +52,7 @@ class PDUChecker(BaseEquipmentChecker):
             CheckItem("PDU-061", "Maintenance bypass provisions", "Redundancy", "Uptime Tier III", "major"),
         ]
 
-    def _evaluate_check(self, item, text, metadata):
+    def _evaluate_check(self, item: CheckItem, text: str, metadata: dict) -> ReviewFinding:
         check_id = item.id
 
         if check_id == "PDU-003":

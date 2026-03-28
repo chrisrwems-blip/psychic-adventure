@@ -1,7 +1,5 @@
 """PDF text extraction with OCR fallback for scanned pages."""
 import re
-import os
-from typing import Optional
 
 # Minimum characters to consider a page as having usable text
 MIN_TEXT_THRESHOLD = 30

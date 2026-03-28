@@ -43,7 +43,7 @@ class BusDuctChecker(BaseEquipmentChecker):
             CheckItem("BD-042", "Temperature rise test data", "Standards", "UL 857", "minor"),
         ]
 
-    def _evaluate_check(self, item, text, metadata):
+    def _evaluate_check(self, item: CheckItem, text: str, metadata: dict) -> ReviewFinding:
         check_id = item.id
 
         if check_id == "BD-001":

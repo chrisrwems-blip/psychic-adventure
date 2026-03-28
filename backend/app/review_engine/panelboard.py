@@ -47,7 +47,7 @@ class PanelboardChecker(BaseEquipmentChecker):
             CheckItem("PNL-061", "NEC 408 compliance", "Standards", "NEC 408", "major"),
         ]
 
-    def _evaluate_check(self, item, text, metadata):
+    def _evaluate_check(self, item: CheckItem, text: str, metadata: dict) -> ReviewFinding:
         check_id = item.id
 
         if check_id == "PNL-001":

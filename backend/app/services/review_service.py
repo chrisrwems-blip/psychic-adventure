@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.models.database_models import Submittal, ReviewResult, ReviewComment, SubmittalStatus
 from app.review_engine.registry import get_checker
-from app.services.pdf_parser import extract_text_from_pdf, extract_metadata, extract_text_by_page, extract_metadata_by_page
+from app.services.pdf_parser import extract_metadata, extract_text_by_page, extract_metadata_by_page
 
 
 def run_review(db: Session, submittal_id: int) -> dict:

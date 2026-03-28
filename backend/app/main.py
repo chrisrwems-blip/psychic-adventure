@@ -45,12 +45,10 @@ def health_check():
 def dashboard():
     from sqlalchemy import func
     from app.database import SessionLocal
-    from app.models.database_models import Project, Submittal, ReviewComment
+    from app.models.database_models import Project, Submittal, ReviewComment, RFI, SubmittalRegisterItem
 
     db = SessionLocal()
     try:
-        from app.models.database_models import RFI, SubmittalRegisterItem
-
         total_projects = db.query(func.count(Project.id)).scalar()
         total_submittals = db.query(func.count(Submittal.id)).scalar()
         pending = db.query(func.count(Submittal.id)).filter(Submittal.status.in_(["uploaded", "reviewing"])).scalar()
