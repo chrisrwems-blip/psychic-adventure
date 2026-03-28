@@ -109,20 +109,39 @@ def _extract_breakers(text: str, text_lower: str, page: int) -> list[ExtractedEq
 
     # ABB format: "XT7H 1000", "E6.2 H 4000", "XT2H 160", "XT5 630A"
     abb_patterns = [
-        # E-series ACBs: E1.2, E2.2, E4.2, E6.2 etc.
-        (r'(E\d+\.?\d*\s*[HNSLV]?\s*)(\d{3,5})', "ABB ACB"),
-        # XT-series MCCBs: XT1, XT2, XT4, XT5, XT7 etc.
-        (r'(XT\d+[HNSLBC]?\s*)(\d{2,5})', "ABB MCCB"),
+        # E-series ACBs: E1.2, E2.2, E4.2, E6.2 — MUST have a dot (to avoid UL file numbers like E230163)
+        (r'(E\d\.\d\s*[HNSLV]?\s*)(\d{3,5})', "ABB ACB"),
+        # XT-series MCCBs: XT2, XT4, XT5, XT7 etc. — require H/N/S/L/B/C suffix or space before amps
+        # XT1 is excluded because "XT1 1", "XT1 2" etc. are schematic wire refs
+        (r'(XT[2-9][HNSLBC]?\s+)(\d{2,5})', "ABB MCCB"),
+        (r'(XT\d+[HNSLBC]\s*)(\d{2,5})', "ABB MCCB"),
         # Tmax series: T1, T4, T5, T6, T7
         (r'(Tmax\s*T\d+[HNSLV]?\s*)(\d{2,5})', "ABB Tmax"),
         (r'\b(T\d[HNSLV]?\s+)(\d{3,5})\b', "ABB Tmax"),
     ]
+
+    # Filter out known false positive patterns
+    FALSE_POSITIVE_PREFIXES = (
+        "DSE", "dse",  # DSE generator controllers (DSE7320, DSE2548, etc.)
+    )
 
     for pattern, mfr_type in abb_patterns:
         for match in re.finditer(pattern, text):
             model = match.group(1).strip()
             amps = match.group(2)
             desig = f"{model}{amps}"
+
+            # Skip false positives: UL file numbers, DSE controllers, etc.
+            preceding = text[max(0, match.start()-10):match.start()]
+            if any(preceding.endswith(pfx) for pfx in FALSE_POSITIVE_PREFIXES):
+                continue
+            # Skip if amps is unrealistic (>6300A) or too small for this pattern (<10A)
+            amp_val = int(amps)
+            if amp_val > 6300 or amp_val < 10:
+                continue
+            # Skip UL file numbers: pattern like "E" followed by 5+ digits with no dot
+            if re.match(r'^E\d{5,}$', desig):
+                continue
 
             context = text_lower[max(0, match.start()-50):min(match.end()+150, len(text_lower))]
 
@@ -246,9 +265,21 @@ def _extract_breakers(text: str, text_lower: str, page: int) -> list[ExtractedEq
 def _extract_transformers(text: str, text_lower: str, page: int) -> list[ExtractedEquipment]:
     results = []
 
-    # "Sn=27.78[kVA]" (ABB style in SLDs)
+    # "Sn=27.78[kVA]" (ABB style in SLDs) — but only if it's actually a transformer
+    # Chillers, pumps, racks, fans also have Sn= for their apparent power DRAW, not transformer rating
+    LOAD_KEYWORDS = ["chiller", "pump", "motor", "fan", "rack", "shelf", "coil", "compressor"]
+
     for match in re.finditer(r'[Ss]n\s*=\s*(\d+\.?\d*)\s*\[?kva\]?', text_lower):
         kva_val = match.group(1)
+
+        # Check context: is this a load or a transformer?
+        context = text_lower[max(0, match.start()-80):min(match.end()+80, len(text_lower))]
+        is_load = any(kw in context for kw in LOAD_KEYWORDS)
+
+        if is_load:
+            # It's a load rating, not a transformer — skip or categorize differently
+            continue
+
         eq = ExtractedEquipment(
             equipment_type="transformer",
             designation=f"TX-{kva_val}kVA-PG{page}",
