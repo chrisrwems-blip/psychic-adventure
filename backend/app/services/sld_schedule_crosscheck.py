@@ -41,7 +41,16 @@ def extract_schedule_entries(pages: list[dict]) -> tuple[list[ScheduleEntry], li
     for page_data in pages:
         page_num = page_data["page"]
         text = page_data["text"]
+        text_lower = page_data.get("text_lower", text.lower())
         page_type = page_data.get("page_type", "unknown")
+
+        # If page_type not set, detect from content keywords
+        if page_type == "unknown" or not page_type:
+            if any(kw in text_lower for kw in ["single line", "one-line", "one line", "sld"]):
+                page_type = "single_line_diagram"
+            elif any(kw in text_lower for kw in ["breaker details", "breaker type", "cubicle no",
+                                                   "panel schedule", "branch circuit"]):
+                page_type = "panel_schedule"
 
         if page_type == "single_line_diagram":
             entries = _extract_from_sld(text, page_num)
