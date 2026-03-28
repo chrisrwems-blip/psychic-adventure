@@ -160,6 +160,23 @@ def serve_annotated_pdf(submittal_id: int, download: bool = False, db: Session =
     return FileResponse(s.annotated_file_path, media_type="application/pdf")
 
 
+@router.post("/{submittal_id}/stamp")
+def stamp_submittal(
+    submittal_id: int,
+    disposition: str = Form("approved_as_noted"),
+    reviewer_name: str = Form("Engineer of Record"),
+    db: Session = Depends(get_db),
+):
+    """Apply a review disposition stamp to the submittal PDF."""
+    from app.services.approval_stamp import apply_stamp
+    try:
+        stamped_path = apply_stamp(db, submittal_id, disposition, reviewer_name)
+        return FileResponse(stamped_path, media_type="application/pdf",
+                            filename=os.path.basename(stamped_path))
+    except (ValueError, FileNotFoundError) as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 @router.delete("/{submittal_id}")
 def delete_submittal(submittal_id: int, db: Session = Depends(get_db)):
     s = db.query(Submittal).filter(Submittal.id == submittal_id).first()
