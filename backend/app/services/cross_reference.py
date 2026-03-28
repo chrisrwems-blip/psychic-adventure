@@ -174,7 +174,16 @@ def _check_transformer_protection(equipment: list, topology: Optional[SystemTopo
         sec_v = int(tx.secondary_voltage) if tx.secondary_voltage else 208
         pri_fla = transformer_fla(kva, pri_v)
         sec_fla = transformer_fla(kva, sec_v)
-        max_pri_ocpd = transformer_max_primary_ocpd(kva, pri_v, has_secondary_protection=True)
+
+        # Check if secondary protection exists by looking for a breaker downstream
+        has_sec_prot = False
+        if topology:
+            node = topology.get_node(tx.designation)
+            if node:
+                downstream = topology.get_downstream_tree(tx.designation)
+                has_sec_prot = any(d.equipment_type == "breaker" for d in downstream)
+
+        max_pri_ocpd = transformer_max_primary_ocpd(kva, pri_v, has_secondary_protection=has_sec_prot)
         max_sec_ocpd = transformer_max_secondary_ocpd(kva, sec_v)
 
         findings.append(CrossRefFinding(
