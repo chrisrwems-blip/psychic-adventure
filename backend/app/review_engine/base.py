@@ -10,6 +10,9 @@ class CheckItem:
     category: str
     standard: str
     severity: str  # critical, major, minor, info
+    requires_spec: bool = False  # True = only run if spec document is uploaded
+    context: str = "all"  # "all", "data_center", "commercial", "industrial"
+    check_scope: str = "document"  # "document" = check once for whole doc, "per_equipment" = per item found
 
 
 @dataclass
