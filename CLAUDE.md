@@ -43,5 +43,15 @@ Upload PDFs → automated review → mark up PDF → generate RFI emails → tra
 - Frontend: Vite React on port 5173
 - Python 3.14 on user's machine — need unpinned deps (>=) not pinned (==) to avoid Rust compilation issues
 
+## What the Engineer Actually Reviews (from real 42-comment review)
+Priority order based on actual review comments:
+1. **SLD vs panel schedule consistency** — #1 issue. Frame sizes, trip ratings, breaker existence, metering locations must match between SLD and detailed schedules
+2. **UL listing / NEC vs IEC** — Every piece of equipment must be UL listed for US installation. Flag metric sizing, CPC terminology, IEC-only certifications
+3. **Constructability** — Cable routing space, cable entry cutouts, through-wall details, shipping splits
+4. **Naming consistency** — Equipment tags must be logical, consistent between SLD and schedules, and make sense as field labels
+5. **Missing information** — Frame sizes, trip settings, PQM locations, fuse schedules
+6. **Engineering questions** — Why different kAIC on identical incomers? Which source is normal for ATS?
+7. **Specific errors/typos** — Catch obvious mistakes
+
 ## Branch
 All work on: `claude/submittal-review-platform-tmhtv`
