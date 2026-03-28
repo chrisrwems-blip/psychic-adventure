@@ -17,6 +17,9 @@ backend/annotated/
 .vscode/
 .idea/
 
+# Email credentials (contains passwords)
+backend/email_settings.json
+
 # Electron build artifacts
 backend/build/
 backend/*.spec

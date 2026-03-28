@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.database_models import GeneratedEmail
 from app.models.schemas import EmailGenerate, EmailResponse
 from app.services.email_generator import generate_email
+from app.services.smtp_service import send_email
 
 router = APIRouter(prefix="/api/emails", tags=["emails"])
 
@@ -52,3 +54,30 @@ def mark_email_sent(email_id: int, db: Session = Depends(get_db)):
     email.sent = 1
     db.commit()
     return {"detail": "Email marked as sent"}
+
+
+class SendEmailRequest(BaseModel):
+    to: str
+    cc: str = ""
+
+
+@router.post("/{email_id}/send")
+def send_generated_email(email_id: int, request: SendEmailRequest, db: Session = Depends(get_db)):
+    """Actually send a generated email via SMTP."""
+    email = db.query(GeneratedEmail).filter(GeneratedEmail.id == email_id).first()
+    if not email:
+        raise HTTPException(status_code=404, detail="Email not found")
+
+    result = send_email(
+        to=request.to,
+        subject=email.subject,
+        body=email.body,
+        cc=request.cc,
+    )
+
+    if result["success"]:
+        email.sent = 1
+        email.recipients = request.to
+        db.commit()
+
+    return result

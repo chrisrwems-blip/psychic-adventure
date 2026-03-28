@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   getSubmittal, runReview, getReviewResults, getComments,
-  addComment, updateComment, generateEmail, getEmails,
+  addComment, updateComment, generateEmail, getEmails, sendGeneratedEmail,
   getSubmittalPdfUrl, annotateSubmittal, getAnnotatedPdfUrl, getAnnotatedPdfDownloadUrl,
   getReportUrl, compareRevision,
 } from '../api/client';
@@ -780,20 +780,60 @@ export default function SubmittalReview() {
 
           {/* Generated Email Preview */}
           {selectedEmail && (
-            <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-4">
-              <div className="flex items-center justify-between mb-3">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-4 space-y-3">
+              <div className="flex items-center justify-between">
                 <h3 className="font-semibold dark:text-slate-200">Generated Email</h3>
-                <button
-                  onClick={() => navigator.clipboard.writeText(selectedEmail.body)}
-                  className="px-3 py-1 bg-gray-100 dark:bg-slate-700 dark:text-slate-300 rounded text-sm hover:bg-gray-200 dark:hover:bg-slate-600"
-                >
-                  Copy to Clipboard
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => navigator.clipboard.writeText(selectedEmail.body)}
+                    className="px-3 py-1 bg-gray-100 dark:bg-slate-700 dark:text-slate-300 rounded text-sm hover:bg-gray-200 dark:hover:bg-slate-600"
+                  >
+                    Copy
+                  </button>
+                </div>
               </div>
-              <div className="text-sm mb-2 dark:text-slate-300"><strong>Subject:</strong> {selectedEmail.subject}</div>
+              <div className="text-sm dark:text-slate-300"><strong>Subject:</strong> {selectedEmail.subject}</div>
               <pre className="text-sm bg-gray-50 dark:bg-slate-700 dark:text-slate-300 rounded p-4 whitespace-pre-wrap font-mono border dark:border-slate-600 max-h-96 overflow-y-auto">
                 {selectedEmail.body}
               </pre>
+              {!selectedEmail.sent && (
+                <div className="flex items-center gap-3 pt-3 border-t dark:border-slate-700">
+                  <input
+                    type="email"
+                    placeholder="Recipient email address"
+                    defaultValue={selectedEmail.recipients || emailForm.recipients}
+                    id={`send-to-${selectedEmail.id}`}
+                    className="flex-1 border dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 dark:text-slate-200 dark:placeholder-slate-500"
+                  />
+                  <button
+                    onClick={async () => {
+                      const input = document.getElementById(`send-to-${selectedEmail.id}`) as HTMLInputElement;
+                      const to = input?.value;
+                      if (!to) return;
+                      const res = await sendGeneratedEmail(selectedEmail.id, { to });
+                      if (res.data.success) {
+                        loadData();
+                      } else {
+                        alert(res.data.message);
+                      }
+                    }}
+                    className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 transition-colors inline-flex items-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
+                    </svg>
+                    Send
+                  </button>
+                </div>
+              )}
+              {selectedEmail.sent === 1 && (
+                <div className="flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400 pt-2">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                  </svg>
+                  Sent{selectedEmail.recipients ? ` to ${selectedEmail.recipients}` : ''}
+                </div>
+              )}
             </div>
           )}
 

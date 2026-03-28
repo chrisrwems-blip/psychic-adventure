@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from app.database import init_db
-from app.routers import projects, submittals, reviews, comments, emails, register, rfis, feedback
+from app.routers import projects, submittals, reviews, comments, emails, register, rfis, feedback, settings
 
 
 @asynccontextmanager
@@ -14,7 +14,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="DataCenter Submittal Review Platform",
-    description="Automated submittal review for modular data center electrical systems",
+    description="ArcLight — Automated submittal review for data center electrical systems",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -35,11 +35,12 @@ app.include_router(emails.router)
 app.include_router(register.router)
 app.include_router(rfis.router)
 app.include_router(feedback.router)
+app.include_router(settings.router)
 
 
 @app.get("/api/health")
 def health_check():
-    return {"status": "healthy", "service": "DataCenter Submittal Review Platform"}
+    return {"status": "healthy", "service": "ArcLight"}
 
 
 @app.get("/api/dashboard")
