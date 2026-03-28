@@ -151,6 +151,68 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Analytics Section */}
+      {stats && (stats.submittals_by_status || stats.comments_by_severity) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Submittals by Status */}
+          {stats.submittals_by_status && Object.keys(stats.submittals_by_status).length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <h3 className="text-sm font-semibold text-gray-700 mb-4">Submittals by Status</h3>
+              <div className="space-y-3">
+                {Object.entries(stats.submittals_by_status).map(([status, count]: [string, any]) => {
+                  const total = Object.values(stats.submittals_by_status).reduce((a: any, b: any) => a + b, 0) as number;
+                  const pct = total > 0 ? (count / total) * 100 : 0;
+                  const colors: Record<string, string> = {
+                    uploaded: 'bg-slate-400', reviewing: 'bg-amber-400',
+                    reviewed: 'bg-blue-400', approved: 'bg-emerald-400',
+                    rejected: 'bg-red-400', revise_resubmit: 'bg-orange-400',
+                  };
+                  return (
+                    <div key={status}>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-gray-600 capitalize">{status.replace('_', ' ')}</span>
+                        <span className="font-semibold">{count}</span>
+                      </div>
+                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full ${colors[status] || 'bg-gray-400'}`} style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Comments by Severity */}
+          {stats.comments_by_severity && Object.keys(stats.comments_by_severity).length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <h3 className="text-sm font-semibold text-gray-700 mb-4">Open Comments by Severity</h3>
+              <div className="space-y-3">
+                {Object.entries(stats.comments_by_severity).map(([severity, count]: [string, any]) => {
+                  const total = Object.values(stats.comments_by_severity).reduce((a: any, b: any) => a + b, 0) as number;
+                  const pct = total > 0 ? (count / total) * 100 : 0;
+                  const colors: Record<string, string> = {
+                    critical: 'bg-red-500', major: 'bg-orange-500',
+                    minor: 'bg-amber-400', info: 'bg-blue-400',
+                  };
+                  return (
+                    <div key={severity}>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-gray-600 capitalize">{severity}</span>
+                        <span className="font-semibold">{count}</span>
+                      </div>
+                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full ${colors[severity] || 'bg-gray-400'}`} style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Projects Section */}
       <div>
         <div className="flex items-center justify-between mb-5">
