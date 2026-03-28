@@ -23,6 +23,7 @@ export const deleteSubmittal = (id: number) => api.delete(`/submittals/${id}`);
 export const getSubmittalPdfUrl = (id: number) => `/api/submittals/${id}/pdf`;
 export const annotateSubmittal = (id: number) => api.post(`/submittals/${id}/annotate`);
 export const getAnnotatedPdfUrl = (id: number) => `/api/submittals/${id}/annotated-pdf`;
+export const getAnnotatedPdfDownloadUrl = (id: number) => `/api/submittals/${id}/annotated-pdf?download=true`;
 
 // --- Reviews ---
 export const runReview = (submittalId: number) => api.post(`/reviews/${submittalId}/run`);
@@ -46,5 +47,49 @@ export const generateEmail = (submittalId: number, data: { email_type: string; r
 export const getEmails = (submittalId: number) => api.get(`/emails/submittal/${submittalId}`);
 export const markEmailSent = (emailId: number) => api.patch(`/emails/${emailId}/mark-sent`);
 
+// --- Reports ---
+export const getReportUrl = (submittalId: number) => `/api/reviews/${submittalId}/report`;
+
+// --- Revision Comparison ---
+export const compareRevision = (submittalId: number, formData: FormData) =>
+  api.post(`/reviews/${submittalId}/compare-revision`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+
+// --- Spec Validation ---
+export const validateSpec = (submittalId: number, formData: FormData) =>
+  api.post(`/reviews/${submittalId}/validate-spec`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+
+// --- Multi-Submittal Cross-Reference ---
+export const crossReferenceProject = (projectId: number) =>
+  api.post(`/reviews/project/${projectId}/cross-reference`);
+
+// --- Feedback ---
+export const submitFeedback = (submittalId: number, data: { finding_type: string; action: string; notes?: string }) =>
+  api.post(`/feedback/${submittalId}`, data);
+export const getFeedbackStats = () => api.get('/feedback/stats');
+
+// --- NEC Commentary ---
+export const getNecCommentary = (codeRef: string) => api.get(`/reviews/nec-commentary/${encodeURIComponent(codeRef)}`);
+
+// --- Vision ---
+export const startVisionAnalysis = (submittalId: number) => api.post(`/reviews/${submittalId}/vision-analyze`);
+export const getVisionStatus = (submittalId: number) => api.get(`/reviews/${submittalId}/vision-status`);
+export const checkVisionAvailable = () => api.get('/reviews/vision-available');
+
 // --- Dashboard ---
 export const getDashboard = () => api.get('/dashboard');
+
+// --- RFIs ---
+export const createRFI = (submittalId: number, data?: { email_type?: string }) =>
+  api.post(`/rfis/${submittalId}/create`, data || {});
+export const getRFIs = (submittalId: number) => api.get(`/rfis/${submittalId}`);
+export const getAllRFIs = (params?: { status?: string }) => api.get('/rfis/all', { params });
+export const updateRFIStatus = (rfiId: number, data: { status: string }) =>
+  api.patch(`/rfis/${rfiId}/status`, data);
+
+// --- Submittal Register ---
+export const getRegister = (projectId: number) => api.get(`/register/${projectId}`);
+export const addRegisterItem = (projectId: number, data: any) =>
+  api.post(`/register/${projectId}`, data);
+export const updateRegisterItem = (itemId: number, data: any) =>
+  api.patch(`/register/${itemId}`, data);
+export const getRegisterSummary = (projectId: number) => api.get(`/register/${projectId}/summary`);

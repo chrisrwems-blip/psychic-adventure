@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional
 from datetime import datetime
 
@@ -13,6 +13,8 @@ class ProjectCreate(BaseModel):
 
 
 class ProjectResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     name: str
     description: Optional[str]
@@ -21,9 +23,6 @@ class ProjectResponse(BaseModel):
     tier_level: Optional[str]
     created_at: datetime
     submittal_count: Optional[int] = 0
-
-    class Config:
-        from_attributes = True
 
 
 # --- Submittal Schemas ---
@@ -40,6 +39,8 @@ class SubmittalCreate(BaseModel):
 
 
 class SubmittalResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     project_id: int
     title: str
@@ -59,9 +60,6 @@ class SubmittalResponse(BaseModel):
     reviewed_at: Optional[datetime]
     comment_count: Optional[int] = 0
     open_comments: Optional[int] = 0
-
-    class Config:
-        from_attributes = True
 
 
 # --- Comment Schemas ---
@@ -85,6 +83,8 @@ class CommentUpdate(BaseModel):
 
 
 class CommentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     submittal_id: int
     page_number: Optional[int]
@@ -100,12 +100,11 @@ class CommentResponse(BaseModel):
     created_at: datetime
     resolved_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
-
 
 # --- Review Result Schemas ---
 class ReviewResultResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     submittal_id: int
     check_name: str
@@ -113,9 +112,6 @@ class ReviewResultResponse(BaseModel):
     passed: int
     details: Optional[str]
     reference_standard: Optional[str]
-
-    class Config:
-        from_attributes = True
 
 
 # --- Email Schemas ---
@@ -126,6 +122,8 @@ class EmailGenerate(BaseModel):
 
 
 class EmailResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     submittal_id: int
     email_type: str
@@ -135,8 +133,91 @@ class EmailResponse(BaseModel):
     sent: int
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+
+# --- RFI Schemas ---
+class RFICreate(BaseModel):
+    subject: Optional[str] = None
+    body: Optional[str] = None
+    severity: Optional[str] = "major"
+    recipients: Optional[str] = None
+    due_date: Optional[datetime] = None
+    related_comment_ids: Optional[str] = None  # JSON list of comment IDs
+
+
+class RFIStatusUpdate(BaseModel):
+    status: str  # draft, sent, responded, closed
+
+
+class RFIResponseUpdate(BaseModel):
+    response_text: str
+
+
+class RFIResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    submittal_id: int
+    rfi_number: Optional[str]
+    subject: Optional[str]
+    body: Optional[str]
+    status: str
+    severity: Optional[str]
+    recipients: Optional[str]
+    due_date: Optional[datetime]
+    sent_at: Optional[datetime]
+    response_received_at: Optional[datetime]
+    response_text: Optional[str]
+    related_comment_ids: Optional[str]
+    created_at: datetime
+    closed_at: Optional[datetime]
+
+
+# --- Submittal Register Schemas ---
+class RegisterItemCreate(BaseModel):
+    spec_section: Optional[str] = None
+    description: str
+    required: Optional[int] = 1
+    submittal_id: Optional[int] = None
+    status: Optional[str] = "not_submitted"
+    priority: Optional[str] = "normal"
+    notes: Optional[str] = None
+    due_date: Optional[datetime] = None
+
+
+class RegisterItemUpdate(BaseModel):
+    spec_section: Optional[str] = None
+    description: Optional[str] = None
+    required: Optional[int] = None
+    submittal_id: Optional[int] = None
+    status: Optional[str] = None
+    priority: Optional[str] = None
+    notes: Optional[str] = None
+    due_date: Optional[datetime] = None
+
+
+class RegisterItemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    project_id: int
+    spec_section: Optional[str]
+    description: Optional[str]
+    required: int
+    submittal_id: Optional[int]
+    status: str
+    priority: str
+    notes: Optional[str]
+    due_date: Optional[datetime]
+    created_at: datetime
+
+
+class RegisterSummary(BaseModel):
+    total: int
+    not_submitted: int
+    under_review: int
+    approved: int
+    rejected: int
+    resubmit_required: int
 
 
 # --- Dashboard ---

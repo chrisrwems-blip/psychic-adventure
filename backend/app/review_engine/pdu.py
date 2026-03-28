@@ -52,30 +52,23 @@ class PDUChecker(BaseEquipmentChecker):
             CheckItem("PDU-061", "Maintenance bypass provisions", "Redundancy", "Uptime Tier III", "major"),
         ]
 
-    def _evaluate_check(self, item, text, metadata):
+    def _evaluate_check(self, item: CheckItem, text: str, metadata: dict) -> ReviewFinding:
         check_id = item.id
 
         if check_id == "PDU-003":
             kva = re.findall(r'(\d{2,4})\s*kva', text)
             if kva:
-                return self._needs_review(item, f"kVA found: {kva}. Verify matches design load.")
+                return self._pass(item, f"kVA found: {kva}. Verify matches design load.")
             return self._fail(item, "No kVA capacity found")
 
         if check_id == "PDU-011":
             if re.search(r'k-?\s*(\d{1,2})', text):
-                return self._needs_review(item, "K-factor rating found. Verify K-13 or K-20 for DC loads.")
+                return self._pass(item, "K-factor rating found. Verify K-13 or K-20 for DC loads.")
             return self._fail(item, "K-factor rating not specified — critical for data center harmonic loads")
 
         if check_id == "PDU-015":
             if any(x in text for x in ["200%", "200 %", "double neutral", "oversized neutral"]):
-                return self._needs_review(item, "Oversized neutral referenced. Verify 200% rated.")
+                return self._pass(item, "Oversized neutral referenced. Verify 200% rated.")
             return self._fail(item, "200% neutral rating not found — required for harmonic-rich DC loads")
 
         return super()._evaluate_check(item, text, metadata)
-
-    def _pass(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, 1, d, item.standard, item.severity)
-    def _fail(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, 0, d, item.standard, item.severity)
-    def _needs_review(self, item, d):
-        return ReviewFinding(item.id, item.check, item.category, -1, d, item.standard, item.severity)

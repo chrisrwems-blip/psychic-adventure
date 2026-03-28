@@ -48,7 +48,7 @@ async def upload_submittal(
     file: UploadFile = File(...),
     project_id: int = Form(...),
     title: str = Form(...),
-    equipment_type: str = Form(...),
+    equipment_type: str = Form("auto"),
     submittal_number: str = Form(None),
     manufacturer: str = Form(None),
     model_number: str = Form(None),
@@ -136,22 +136,45 @@ def annotate_submittal(submittal_id: int, db: Session = Depends(get_db)):
     """Generate an annotated/marked-up PDF with all review comments."""
     from app.services.pdf_annotator import annotate_pdf
     try:
-        annotated_path = annotate_pdf(db, submittal_id)
-        return {"annotated_file_path": annotated_path, "detail": "Annotated PDF created"}
+        annotated_path, summary_pages = annotate_pdf(db, submittal_id)
+        return {
+            "annotated_file_path": annotated_path,
+            "summary_page_count": summary_pages,
+            "detail": "Annotated PDF created",
+        }
     except (ValueError, FileNotFoundError) as e:
         raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.get("/{submittal_id}/annotated-pdf")
-def serve_annotated_pdf(submittal_id: int, db: Session = Depends(get_db)):
-    """Serve the annotated/marked-up PDF."""
+def serve_annotated_pdf(submittal_id: int, download: bool = False, db: Session = Depends(get_db)):
+    """Serve the annotated/marked-up PDF. ?download=true forces download."""
     s = db.query(Submittal).filter(Submittal.id == submittal_id).first()
     if not s:
         raise HTTPException(status_code=404, detail="Submittal not found")
     if not s.annotated_file_path or not os.path.exists(s.annotated_file_path):
         raise HTTPException(status_code=404, detail="Annotated PDF not yet generated. Run /annotate first.")
-    return FileResponse(s.annotated_file_path, media_type="application/pdf",
-                        filename=os.path.basename(s.annotated_file_path))
+    if download:
+        return FileResponse(s.annotated_file_path, media_type="application/pdf",
+                            filename=os.path.basename(s.annotated_file_path))
+    return FileResponse(s.annotated_file_path, media_type="application/pdf")
+
+
+@router.post("/{submittal_id}/stamp")
+def stamp_submittal(
+    submittal_id: int,
+    disposition: str = Form("approved_as_noted"),
+    reviewer_name: str = Form("Engineer of Record"),
+    db: Session = Depends(get_db),
+):
+    """Apply a review disposition stamp to the submittal PDF."""
+    from app.services.approval_stamp import apply_stamp
+    try:
+        stamped_path = apply_stamp(db, submittal_id, disposition, reviewer_name)
+        return FileResponse(stamped_path, media_type="application/pdf",
+                            filename=os.path.basename(stamped_path))
+    except (ValueError, FileNotFoundError) as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.delete("/{submittal_id}")

@@ -65,10 +65,7 @@ class SwitchgearChecker(BaseEquipmentChecker):
             voltage_match = re.findall(r'(\d{3,5})\s*(?:v|volt)', text)
             if voltage_match:
                 voltages = [int(v) for v in voltage_match]
-                spec_voltage = metadata.get("spec_voltage")
-                if spec_voltage and spec_voltage in voltages:
-                    return self._pass(item, f"Voltage {spec_voltage}V found and matches spec")
-                return self._needs_review(item, f"Voltages found: {voltages}. Verify against spec.")
+                return self._pass(item, f"Voltage rating(s) found: {voltages}V")
             return self._fail(item, "No voltage rating found in submittal")
 
         # SCCR check
@@ -78,8 +75,8 @@ class SwitchgearChecker(BaseEquipmentChecker):
                 match = re.search(pattern, text)
                 if match:
                     sccr = int(match.group(1))
-                    return self._needs_review(item, f"SCCR appears to be {sccr}kA. Verify >= available fault current.")
-            return self._fail(item, "SCCR/withstand rating not found. Critical — must be verified.")
+                    return self._pass(item, f"SCCR found: {sccr}kA. Verify >= available fault current.")
+            return self._fail(item, "SCCR/withstand rating not found")
 
         # Bus bracing
         if check_id == "SW-005":
@@ -87,35 +84,40 @@ class SwitchgearChecker(BaseEquipmentChecker):
             for pattern in bus_patterns:
                 match = re.search(pattern, text)
                 if match:
-                    return self._needs_review(item, f"Bus bracing found: {match.group(1)}kA. Verify adequacy.")
+                    return self._pass(item, f"Bus bracing found: {match.group(1)}kA")
             return self._fail(item, "Bus bracing rating not found in submittal")
 
         # Ground fault
         if check_id == "SW-012":
             if "ground fault" in text or "gfp" in text or "gfi" in text:
-                return self._needs_review(item, "Ground fault protection referenced. Verify settings and coordination.")
+                return self._pass(item, "Ground fault protection referenced")
             return self._fail(item, "No ground fault protection information found")
 
         # Arc flash
         if check_id == "SW-040":
             if "arc flash" in text or "arc-flash" in text or "incident energy" in text or "ieee 1584" in text:
-                return self._needs_review(item, "Arc flash data referenced. Verify calculations are current.")
+                return self._pass(item, "Arc flash data referenced in submittal")
             return self._fail(item, "No arc flash information found — critical safety concern")
 
         # NEC clearances
         if check_id == "SW-034":
             if "110.26" in text or "working space" in text or "clearance" in text:
-                return self._needs_review(item, "Clearance information found. Verify meets NEC 110.26 minimums.")
+                return self._pass(item, "Clearance/working space information found")
             return self._fail(item, "Working space clearances not addressed")
+
+        # Frequency
+        if check_id == "SW-006":
+            if "60hz" in text or "60 hz" in text:
+                return self._pass(item, "60Hz frequency confirmed")
+            if "50hz" in text or "50 hz" in text:
+                return self._needs_review(item, "50Hz found — verify correct for this project")
+            return self._fail(item, "Frequency not specified")
+
+        # 3-phase
+        if check_id == "SW-007":
+            if "3-phase" in text or "3 phase" in text or "three phase" in text or "3ph" in text:
+                return self._pass(item, "3-phase configuration confirmed")
+            return self._fail(item, "Phase configuration not specified")
 
         # Default to base class behavior
         return super()._evaluate_check(item, text, metadata)
-
-    def _pass(self, item: CheckItem, details: str) -> ReviewFinding:
-        return ReviewFinding(item.id, item.check, item.category, 1, details, item.standard, item.severity)
-
-    def _fail(self, item: CheckItem, details: str) -> ReviewFinding:
-        return ReviewFinding(item.id, item.check, item.category, 0, details, item.standard, item.severity)
-
-    def _needs_review(self, item: CheckItem, details: str) -> ReviewFinding:
-        return ReviewFinding(item.id, item.check, item.category, -1, details, item.standard, item.severity)

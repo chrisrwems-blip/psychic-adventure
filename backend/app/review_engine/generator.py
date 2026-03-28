@@ -76,38 +76,29 @@ class GeneratorChecker(BaseEquipmentChecker):
         if check_id == "GEN-001":
             kw = re.findall(r'(\d{3,5})\s*kw', text)
             if kw:
-                return self._needs_review(item, f"kW ratings found: {kw}. Verify matches design load.")
+                return self._pass(item, f"kW ratings found: {kw}. Verify matches design load.")
             return self._fail(item, "No kW rating found in submittal")
 
         if check_id == "GEN-016":
             fuels = ["diesel", "natural gas", "bi-fuel", "bi fuel"]
             found = [f for f in fuels if f in text]
             if found:
-                return self._needs_review(item, f"Fuel type: {found[0]}. Verify matches project spec.")
+                return self._pass(item, f"Fuel type: {found[0]}. Verify matches project spec.")
             return self._fail(item, "Fuel type not specified")
 
         if check_id == "GEN-019":
             if any(x in text for x in ["tier 4", "tier4", "epa", "emission"]):
-                return self._needs_review(item, "Emissions compliance referenced. Verify Tier 4 Final.")
+                return self._pass(item, "Emissions compliance referenced. Verify Tier 4 Final.")
             return self._fail(item, "EPA emissions tier not found — verify compliance")
 
         if check_id == "GEN-032":
             if any(x in text for x in ["start time", "10 sec", "10sec", "startup"]):
-                return self._needs_review(item, "Start time info found. Verify <= 10 seconds for NFPA 110 Level 1.")
+                return self._pass(item, "Start time info found. Verify <= 10 seconds for NFPA 110 Level 1.")
             return self._fail(item, "Start time not documented — must be <=10s for data center")
 
         if check_id == "GEN-060":
             if any(x in text for x in ["n+1", "2n", "redundan", "parallel"]):
-                return self._needs_review(item, "Redundancy/paralleling referenced. Verify matches tier.")
+                return self._pass(item, "Redundancy/paralleling referenced. Verify matches tier.")
             return self._fail(item, "Generator redundancy configuration not addressed")
 
         return super()._evaluate_check(item, text, metadata)
-
-    def _pass(self, item, details):
-        return ReviewFinding(item.id, item.check, item.category, 1, details, item.standard, item.severity)
-
-    def _fail(self, item, details):
-        return ReviewFinding(item.id, item.check, item.category, 0, details, item.standard, item.severity)
-
-    def _needs_review(self, item, details):
-        return ReviewFinding(item.id, item.check, item.category, -1, details, item.standard, item.severity)
