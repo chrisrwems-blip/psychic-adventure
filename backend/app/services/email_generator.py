@@ -54,7 +54,7 @@ def generate_email(
 
 
 def _signature_block(profile: dict) -> str:
-    name = profile.get("reviewer_name") or "[Engineer of Record]"
+    name = profile.get("reviewer_name") or "[Reviewer Name]"
     parts = [name]
     if profile.get("reviewer_title"):
         parts.append(profile["reviewer_title"])
@@ -82,7 +82,7 @@ def _build_rfi_email(project, submittal, comments, notes, profile):
     body = f"""Subject: {subject}
 
 To: {submittal.contractor or '[Contractor Name]'}
-From: {profile.get('reviewer_name') or '[Engineer of Record]'}
+From: {profile.get('reviewer_name') or '[Reviewer Name]'}
 Date: {datetime.now(timezone.utc).strftime("%B %d, %Y")}
 Project: {project_name}
 Re: {submittal.title}

@@ -164,7 +164,7 @@ def serve_annotated_pdf(submittal_id: int, download: bool = False, db: Session =
 def stamp_submittal(
     submittal_id: int,
     disposition: str = Form("approved_as_noted"),
-    reviewer_name: str = Form("Engineer of Record"),
+    reviewer_name: str = Form(""),
     db: Session = Depends(get_db),
 ):
     """Apply a review disposition stamp to the submittal PDF."""

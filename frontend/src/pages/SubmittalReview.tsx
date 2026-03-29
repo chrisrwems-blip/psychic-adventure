@@ -78,7 +78,7 @@ export default function SubmittalReview() {
   const [revisionSummary, setRevisionSummary] = useState<any>(null);
   const [emailForm, setEmailForm] = useState({ email_type: 'clarification', recipients: '', additional_notes: '' });
   const [selectedEmail, setSelectedEmail] = useState<GeneratedEmail | null>(null);
-  const [reviewerName, setReviewerName] = useState('Engineer of Record');
+  const [reviewerName, setReviewerName] = useState('');
 
   useEffect(() => {
     if (submittalId) loadData();
@@ -321,7 +321,7 @@ export default function SubmittalReview() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Reviewer Name</label>
+                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Reviewed by</label>
                 <input name="reviewer_name" type="text" defaultValue={reviewerName} className="input w-full" />
               </div>
             </div>

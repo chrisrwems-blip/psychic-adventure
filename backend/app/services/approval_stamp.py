@@ -36,7 +36,7 @@ def apply_stamp(
     db: Session,
     submittal_id: int,
     disposition: str,
-    reviewer_name: str = "Engineer of Record",
+    reviewer_name: str = "",
     stamp_all_pages: bool = False,
 ) -> str:
     """Apply a review stamp to the submittal PDF.
@@ -146,7 +146,7 @@ def _create_stamp_overlay(
     # Details
     c.setFillColor(Color(0.2, 0.2, 0.2))
     c.setFont("Helvetica", 7)
-    c.drawString(x + 12, y + stamp_h - 45, f"Reviewer: {reviewer}")
+    c.drawString(x + 12, y + stamp_h - 45, f"Reviewed by: {reviewer}" if reviewer else "Reviewed")
     c.drawString(x + 12, y + stamp_h - 57, f"Date: {date}")
     c.drawString(x + 12, y + stamp_h - 69, f"Project: {project[:30]}")
     c.drawString(x + 12, y + stamp_h - 81, f"Submittal: {submittal_title[:30]}")

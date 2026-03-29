@@ -232,7 +232,7 @@ def _draw_cover_page(c, submittal, stats):
     _info_line(c, MARGIN_LEFT, y, "Review Date:", reviewed)
     reviewer = profile.get("reviewer_name")
     if reviewer:
-        _info_line(c, 320, y, "Reviewed By:", reviewer)
+        _info_line(c, 320, y, "Reviewed by:", reviewer)
 
     # --- Disposition stamp ---
     stamp_y = box_top - box_height - 80
