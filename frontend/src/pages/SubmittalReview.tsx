@@ -4,7 +4,7 @@ import {
   getSubmittal, runReview, getReviewResults, getComments,
   addComment, updateComment, generateEmail, getEmails, sendGeneratedEmail,
   getSubmittalPdfUrl, annotateSubmittal, getAnnotatedPdfUrl, getAnnotatedPdfDownloadUrl,
-  getReportUrl, compareRevision,
+  getReportUrl, compareRevision, getProfile,
 } from '../api/client';
 import type { Submittal, ReviewResult, ReviewComment, GeneratedEmail } from '../types';
 
@@ -78,9 +78,13 @@ export default function SubmittalReview() {
   const [revisionSummary, setRevisionSummary] = useState<any>(null);
   const [emailForm, setEmailForm] = useState({ email_type: 'clarification', recipients: '', additional_notes: '' });
   const [selectedEmail, setSelectedEmail] = useState<GeneratedEmail | null>(null);
+  const [reviewerName, setReviewerName] = useState('Engineer of Record');
 
   useEffect(() => {
     if (submittalId) loadData();
+    getProfile().then(res => {
+      if (res.data.reviewer_name) setReviewerName(res.data.reviewer_name);
+    }).catch(() => {});
   }, [submittalId]);
 
   const loadData = async () => {
@@ -318,7 +322,7 @@ export default function SubmittalReview() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Reviewer Name</label>
-                <input name="reviewer_name" type="text" defaultValue="Engineer of Record" className="input w-full" />
+                <input name="reviewer_name" type="text" defaultValue={reviewerName} className="input w-full" />
               </div>
             </div>
             <button type="submit" className="btn-primary">

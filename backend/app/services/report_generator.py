@@ -20,6 +20,7 @@ from reportlab.pdfgen import canvas
 from sqlalchemy.orm import Session
 
 from app.models.database_models import Submittal, ReviewResult, ReviewComment
+from app.services.profile_loader import get_profile
 
 
 # ---------------------------------------------------------------------------
@@ -186,8 +187,10 @@ def _draw_cover_page(c, submittal, stats):
     c.setFont("Helvetica-Bold", 28)
     c.drawString(MARGIN_LEFT, H - 70, "SUBMITTAL REVIEW REPORT")
 
+    profile = get_profile()
+    company = profile.get("company_name") or "ArcLight Review Platform"
     c.setFont("Helvetica", 13)
-    c.drawString(MARGIN_LEFT, H - 95, "DC Submittal Review Platform")
+    c.drawString(MARGIN_LEFT, H - 95, company)
 
     # Thin accent line
     c.setStrokeColor(Color(0.3, 0.5, 0.8))
@@ -227,6 +230,9 @@ def _draw_cover_page(c, submittal, stats):
     y -= 22
     reviewed = submittal.reviewed_at.strftime("%B %d, %Y") if submittal.reviewed_at else "N/A"
     _info_line(c, MARGIN_LEFT, y, "Review Date:", reviewed)
+    reviewer = profile.get("reviewer_name")
+    if reviewer:
+        _info_line(c, 320, y, "Reviewed By:", reviewer)
 
     # --- Disposition stamp ---
     stamp_y = box_top - box_height - 80

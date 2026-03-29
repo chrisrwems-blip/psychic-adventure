@@ -3,6 +3,7 @@ from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 
 from app.models.database_models import Submittal, ReviewComment, GeneratedEmail, Project
+from app.services.profile_loader import get_profile
 
 
 def generate_email(
@@ -26,16 +27,18 @@ def generate_email(
         .all()
     )
 
+    profile = get_profile()
+
     if email_type == "rfi":
-        subject, body = _build_rfi_email(project, submittal, comments, additional_notes)
+        subject, body = _build_rfi_email(project, submittal, comments, additional_notes, profile)
     elif email_type == "clarification":
-        subject, body = _build_clarification_email(project, submittal, comments, additional_notes)
+        subject, body = _build_clarification_email(project, submittal, comments, additional_notes, profile)
     elif email_type == "rejection":
-        subject, body = _build_rejection_email(project, submittal, comments, additional_notes)
+        subject, body = _build_rejection_email(project, submittal, comments, additional_notes, profile)
     elif email_type == "approval":
-        subject, body = _build_approval_email(project, submittal, comments, additional_notes)
+        subject, body = _build_approval_email(project, submittal, comments, additional_notes, profile)
     else:
-        subject, body = _build_clarification_email(project, submittal, comments, additional_notes)
+        subject, body = _build_clarification_email(project, submittal, comments, additional_notes, profile)
 
     email = GeneratedEmail(
         submittal_id=submittal_id,
@@ -50,9 +53,25 @@ def generate_email(
     return email
 
 
-def _build_rfi_email(project, submittal, comments, notes):
+def _signature_block(profile: dict) -> str:
+    name = profile.get("reviewer_name") or "[Engineer of Record]"
+    parts = [name]
+    if profile.get("reviewer_title"):
+        parts.append(profile["reviewer_title"])
+    if profile.get("company_name"):
+        parts.append(profile["company_name"])
+    contact = []
+    if profile.get("company_phone"):
+        contact.append(profile["company_phone"])
+    if contact:
+        parts.append(" | ".join(contact))
+    return "\n".join(parts)
+
+
+def _build_rfi_email(project, submittal, comments, notes, profile):
     project_name = project.name if project else "Project"
-    response_date = (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%B %d, %Y")
+    sla_days = profile.get("review_sla_days", 7)
+    response_date = (datetime.now(timezone.utc) + timedelta(days=sla_days)).strftime("%B %d, %Y")
 
     subject = f"RFI - {project_name} - {submittal.equipment_type.upper()} Submittal Review - {submittal.title}"
 
@@ -63,7 +82,7 @@ def _build_rfi_email(project, submittal, comments, notes):
     body = f"""Subject: {subject}
 
 To: {submittal.contractor or '[Contractor Name]'}
-From: [Engineer of Record]
+From: {profile.get('reviewer_name') or '[Engineer of Record]'}
 Date: {datetime.now(timezone.utc).strftime("%B %d, %Y")}
 Project: {project_name}
 Re: {submittal.title}
@@ -110,14 +129,12 @@ Please provide written responses to each item above. Revised submittals should c
 If you have any questions regarding this review, please do not hesitate to contact us.
 
 Regards,
-[Engineer of Record]
-[Company Name]
-[Phone / Email]
+{_signature_block(profile)}
 """
     return subject, body
 
 
-def _build_clarification_email(project, submittal, comments, notes):
+def _build_clarification_email(project, submittal, comments, notes, profile):
     project_name = project.name if project else "Project"
     subject = f"Clarification Request - {project_name} - {submittal.title}"
 
@@ -144,12 +161,12 @@ During our review of the above submittal, we identified the following items that
 Please provide your response at your earliest convenience so we may continue our review.
 
 Regards,
-[Engineer of Record]
+{_signature_block(profile)}
 """
     return subject, body
 
 
-def _build_rejection_email(project, submittal, comments, notes):
+def _build_rejection_email(project, submittal, comments, notes, profile):
     project_name = project.name if project else "Project"
     subject = f"Submittal Rejected - Revise & Resubmit - {project_name} - {submittal.title}"
 
@@ -177,12 +194,12 @@ The above-referenced submittal has been reviewed and is being returned with a st
 Please address ALL items above and resubmit for review. Do not proceed with fabrication or procurement until an approved submittal is received.
 
 Regards,
-[Engineer of Record]
+{_signature_block(profile)}
 """
     return subject, body
 
 
-def _build_approval_email(project, submittal, comments, notes):
+def _build_approval_email(project, submittal, comments, notes, profile):
     project_name = project.name if project else "Project"
     has_comments = len(comments) > 0
     status = "APPROVED AS NOTED" if has_comments else "APPROVED"
@@ -213,6 +230,6 @@ The above-referenced submittal has been reviewed and is {status}.
 This approval does not relieve the contractor of responsibility to comply with the contract documents and applicable codes.
 
 Regards,
-[Engineer of Record]
+{_signature_block(profile)}
 """
     return subject, body
