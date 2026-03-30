@@ -127,15 +127,18 @@ def _run_vision_job(submittal_id: int):
                     )
                     db.add(db_result)
 
-                    # If the answer mentions concerns, create a comment
+                    # Check if the answer mentions concerns
                     answer_lower = result.answer.lower()
                     is_concern = any(kw in answer_lower for kw in [
                         "not ul", "no ul", "iec only", "violation", "undersized",
                         "inadequate", "missing", "does not meet", "clearance",
-                        "less than", "insufficient",
+                        "less than", "insufficient", "error", "incorrect",
+                        "mismatch", "discrepancy", "not rated", "exceeds",
+                        "overloaded", "no ground", "ungrounded",
                     ])
 
                     if is_concern:
+                        # Concern — major severity
                         comment = ReviewComment(
                             submittal_id=submittal_id,
                             comment_text=f"[Vision AI] Page {page_num}: {result.answer[:300]}",
@@ -145,6 +148,16 @@ def _run_vision_job(submittal_id: int):
                         )
                         db.add(comment)
                         findings_count += 1
+                    else:
+                        # No concern — save as info so engineer can see what AI observed
+                        comment = ReviewComment(
+                            submittal_id=submittal_id,
+                            comment_text=f"[Vision AI] Page {page_num}: {result.answer[:300]}",
+                            category="vision_analysis",
+                            severity="info",
+                            page_number=page_num,
+                        )
+                        db.add(comment)
 
                     db.commit()
 
