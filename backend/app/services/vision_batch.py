@@ -9,9 +9,12 @@ Runs as a background task — main review completes immediately with
 text-based results. Vision findings append as they complete.
 """
 import os
+import logging
 import threading
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from app.database import SessionLocal
 from app.models.database_models import Submittal, ReviewResult, ReviewComment
@@ -136,6 +139,11 @@ def _run_vision_job(submittal_id: int):
                     from app.services.vision_analyzer import analyze_nameplate
                     result = analyze_nameplate(submittal.file_path, page_num)
 
+                logger.info("[vision-batch] Page %d (%s): result=%s, answer_len=%d",
+                            page_num, analysis_type,
+                            "OK" if result else "None",
+                            len(result.answer) if result and result.answer else 0)
+
                 if result and result.answer:
                     # Save as review result
                     db_result = ReviewResult(
@@ -183,8 +191,7 @@ def _run_vision_job(submittal_id: int):
                     db.commit()
 
             except Exception as e:
-                # Log but don't stop the whole job
-                pass
+                logger.error("[vision-batch] Page %d failed: %s", page_num, e)
 
             _running_jobs[submittal_id]["pages_complete"] = i + 1
             _running_jobs[submittal_id]["findings"] = findings_count
