@@ -515,27 +515,48 @@ export default function SubmittalReview() {
 
           {/* Vision AI status */}
           {visionStatus && visionStatus.status !== 'not_started' && (
-            <div className="flex items-center gap-3 text-sm bg-purple-50 dark:bg-purple-900/20 rounded p-2">
-              <svg className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-              </svg>
-              <span className="text-purple-700 dark:text-purple-300 font-medium">Vision AI</span>
-              {visionStatus.status === 'running' || visionStatus.status === 'starting' ? (
-                <span className="text-purple-600 dark:text-purple-400">
-                  Analyzing... {visionStatus.pages_complete}/{visionStatus.pages_total} pages
-                </span>
-              ) : visionStatus.status === 'complete' ? (
-                <span className="text-purple-600 dark:text-purple-400">
-                  {visionStatus.pages_complete} pages analyzed, {visionStatus.findings} findings
-                </span>
-              ) : visionStatus.status === 'error' ? (
-                <span className="text-red-600 dark:text-red-400">Analysis failed</span>
-              ) : null}
-              {visionStatus.backend && (
-                <span className="text-xs text-purple-400 dark:text-purple-500 ml-auto">via {visionStatus.backend}</span>
+            <details className="text-sm">
+              <summary className="flex items-center gap-3 bg-purple-50 dark:bg-purple-900/20 rounded p-2 cursor-pointer">
+                <svg className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                </svg>
+                <span className="text-purple-700 dark:text-purple-300 font-medium">Vision AI</span>
+                {visionStatus.status === 'running' || visionStatus.status === 'starting' ? (
+                  <span className="text-purple-600 dark:text-purple-400">
+                    Analyzing... {visionStatus.pages_complete}/{visionStatus.pages_total} pages
+                  </span>
+                ) : visionStatus.status === 'complete' ? (
+                  <span className="text-purple-600 dark:text-purple-400">
+                    {visionStatus.pages_complete} pages analyzed, {visionStatus.findings} findings
+                  </span>
+                ) : visionStatus.status === 'error' ? (
+                  <span className="text-red-600 dark:text-red-400">Analysis failed</span>
+                ) : null}
+                {visionStatus.backend && (
+                  <span className="text-xs text-purple-400 dark:text-purple-500 ml-auto">via {visionStatus.backend}</span>
+                )}
+              </summary>
+              {visionStatus.pages_triggered && visionStatus.pages_triggered.length > 0 && (
+                <div className="mt-2 bg-purple-50/50 dark:bg-purple-900/10 rounded p-2 space-y-1">
+                  <div className="text-xs font-semibold text-purple-700 dark:text-purple-400 mb-1">Pages Analyzed</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-1">
+                    {visionStatus.pages_triggered.map((p: any, i: number) => (
+                      <div key={i} className="flex items-center gap-2 text-xs">
+                        <span className="font-mono font-bold text-purple-700 dark:text-purple-400 w-10">pg {p.page}</span>
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                          p.type === 'sld' ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400' :
+                          p.type === 'ul_listing' ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400' :
+                          p.type === 'clearance' ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400' :
+                          'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+                        }`}>{p.type}</span>
+                        <span className="text-slate-500 dark:text-slate-400 truncate">{p.reason}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
-            </div>
+            </details>
           )}
 
           {/* Equipment discovered */}

@@ -54,6 +54,7 @@ def start_vision_analysis(submittal_id: int):
         "pages_total": 0,
         "pages_complete": 0,
         "findings": 0,
+        "pages_triggered": [],
     }
 
     thread = threading.Thread(target=_run_vision_job, args=(submittal_id,), daemon=True)
@@ -113,6 +114,9 @@ def _run_vision_job(submittal_id: int):
 
         _running_jobs[submittal_id]["status"] = "running"
         _running_jobs[submittal_id]["pages_total"] = len(pages_to_analyze)
+        _running_jobs[submittal_id]["pages_triggered"] = [
+            {"page": p, "type": t, "reason": r} for p, t, r in pages_to_analyze
+        ]
 
         findings_count = 0
 
