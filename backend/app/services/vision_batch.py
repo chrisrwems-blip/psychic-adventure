@@ -151,7 +151,7 @@ def _run_vision_job(submittal_id: int):
                         check_name=f"[Vision AI] Page {page_num}: {reason}",
                         check_category="AI Vision Analysis",
                         passed=-1,  # needs human review
-                        details=f"Page {page_num} ({result.backend} analysis): {result.answer[:500]}",
+                        details=f"Page {page_num} ({result.backend} analysis): {result.answer[:1500]}",
                         reference_standard="AI Vision",
                     )
                     db.add(db_result)
@@ -170,7 +170,7 @@ def _run_vision_job(submittal_id: int):
                         # Concern — major severity
                         comment = ReviewComment(
                             submittal_id=submittal_id,
-                            comment_text=f"[Vision AI] Page {page_num}: {result.answer[:300]}",
+                            comment_text=f"[Vision AI] Page {page_num}: {result.answer[:800]}",
                             category="vision_analysis",
                             severity="major",
                             page_number=page_num,
@@ -181,7 +181,7 @@ def _run_vision_job(submittal_id: int):
                         # No concern — save as info so engineer can see what AI observed
                         comment = ReviewComment(
                             submittal_id=submittal_id,
-                            comment_text=f"[Vision AI] Page {page_num}: {result.answer[:300]}",
+                            comment_text=f"[Vision AI] Page {page_num}: {result.answer[:800]}",
                             category="vision_analysis",
                             severity="info",
                             page_number=page_num,
