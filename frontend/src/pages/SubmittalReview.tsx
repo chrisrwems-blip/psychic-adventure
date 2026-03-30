@@ -4,7 +4,7 @@ import {
   getSubmittal, runReview, getReviewResults, getComments,
   addComment, updateComment, generateEmail, getEmails, sendGeneratedEmail,
   getSubmittalPdfUrl, annotateSubmittal, getAnnotatedPdfUrl, getAnnotatedPdfDownloadUrl,
-  getReportUrl, compareRevision, getProfile,
+  getReportUrl, compareRevision, getProfile, checkVisionAvailable,
 } from '../api/client';
 import type { Submittal, ReviewResult, ReviewComment, GeneratedEmail } from '../types';
 
@@ -79,11 +79,17 @@ export default function SubmittalReview() {
   const [emailForm, setEmailForm] = useState({ email_type: 'clarification', recipients: '', additional_notes: '' });
   const [selectedEmail, setSelectedEmail] = useState<GeneratedEmail | null>(null);
   const [reviewerName, setReviewerName] = useState('');
+  const [visionAvailable, setVisionAvailable] = useState(false);
+  const [visionBackend, setVisionBackend] = useState('');
 
   useEffect(() => {
     if (submittalId) loadData();
     getProfile().then(res => {
       if (res.data.reviewer_name) setReviewerName(res.data.reviewer_name);
+    }).catch(() => {});
+    checkVisionAvailable().then(res => {
+      setVisionAvailable(res.data.available);
+      setVisionBackend(res.data.backend || '');
     }).catch(() => {});
   }, [submittalId]);
 
@@ -260,14 +266,25 @@ export default function SubmittalReview() {
             <span className="px-2 py-0.5 rounded-full text-xs bg-gray-200 dark:bg-slate-700 dark:text-slate-300">{submittal.status}</span>
           </div>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handleRunReview}
-            disabled={reviewing}
-            className="px-6 py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50"
-          >
-            {reviewing ? 'Reviewing...' : 'Run Review'}
-          </button>
+        <div className="flex gap-2 items-center">
+          <div className="relative">
+            <button
+              onClick={handleRunReview}
+              disabled={reviewing}
+              className="px-6 py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50"
+            >
+              {reviewing ? 'Reviewing...' : 'Run Review'}
+            </button>
+            {visionAvailable && (
+              <span className="absolute -top-2 -right-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 ring-1 ring-purple-300 dark:ring-purple-700" title={`Vision AI: ${visionBackend}`}>
+                <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                </svg>
+                AI
+              </span>
+            )}
+          </div>
           <button
             onClick={handleAnnotate}
             disabled={annotating || comments.length === 0}
