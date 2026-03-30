@@ -167,60 +167,70 @@ def analyze_page(file_path: str, page_number: int, prompt: str) -> Optional[Visi
 #  Pre-built analysis prompts for common submittal review tasks
 # ---------------------------------------------------------------------------
 
-SLD_ANALYSIS_PROMPT = """You are an electrical engineer reviewing a single-line diagram (SLD).
+SLD_ANALYSIS_PROMPT = """You are a senior electrical engineer performing a detailed review of this single-line diagram (SLD) for a data center. Your job is to FIND PROBLEMS.
 
-List every piece of equipment shown on this drawing. For each item, provide:
-1. Equipment designation (e.g., Q1, Q7, CB-1)
-2. Equipment type (ACB, MCCB, transformer, bus, ATS, etc.)
-3. Manufacturer and model if visible (e.g., ABB E6.2H, Eaton NRX)
-4. Ratings: frame size, trip rating, poles, interrupting capacity (kAIC)
-5. What it feeds (downstream equipment name)
-6. What feeds it (upstream equipment name)
+First, identify every piece of equipment visible (breakers, transformers, buses, ATS, UPS, generators, PDUs). Note their designations and ratings.
 
-Format as a structured list. Include EVERY device visible on the drawing."""
+Then check for these specific issues and flag every one you find:
+- MISSING RATINGS: Any breaker or device without a visible frame size, trip rating, or interrupting capacity
+- COORDINATION CONCERNS: A downstream breaker rated higher than its upstream breaker
+- TOPOLOGY ISSUES: Any bus section with no visible tie breaker or isolation means
+- SINGLE POINTS OF FAILURE: Any critical path without redundancy
+- LABELING ERRORS: Inconsistent or unclear equipment designations
+- MISSING GROUND FAULT: 480Y/277V systems >1000A without ground fault protection shown
+- ARC FLASH: Breakers ≥1200A without arc energy reduction noted (NEC 240.87)
 
-UL_LISTING_PROMPT = """You are an electrical engineer reviewing a product data sheet / cut sheet.
+For EVERY issue found, state: "ISSUE: [description] — [relevant NEC code if applicable]"
+If no issues found for a check, skip it. Do NOT say "no issues found" — only report actual problems.
+If you cannot read something clearly, report: "ISSUE: [item] rating is not legible — verify in field""""
 
-Answer these questions about this page:
-1. Is UL listed or UL recognized? (Yes/No/Not visible)
-2. What is the UL file number if shown?
-3. Is there a cUL (Canadian) listing?
-4. Are there IEC certifications shown? Which ones?
-5. Is there a CE marking?
-6. What is the product name and model number?
-7. What voltage and frequency is it rated for?
+UL_LISTING_PROMPT = """You are a senior electrical engineer checking this equipment data sheet for US code compliance.
 
-Be specific. If you cannot see something clearly, say so."""
+Look carefully at this page and answer:
+1. Is there a UL listing mark visible? (the circled UL symbol, or "UL Listed" text)
+2. Are there ONLY IEC/CE markings with NO UL listing? If so, this is a MAJOR ISSUE — equipment cannot be legally installed in the US without UL listing per NEC 110.2.
+3. What is the voltage rating shown? Is it 480V/60Hz (US standard) or 400V/50Hz (IEC standard)?
+4. What is the short-circuit current rating (SCCR or kAIC)?
 
-CLEARANCE_PROMPT = """You are an electrical engineer reviewing a layout/GA drawing.
+Report issues in this format:
+"ISSUE: [description]"
 
-Answer these questions:
-1. What are the clearances shown in front of the electrical equipment? (in inches or feet)
-2. What are the clearances behind the equipment?
-3. What is the overall width and depth of the equipment?
-4. Are there any dimensions that appear to violate NEC 110.26 minimum working clearances?
-   (For 480V equipment: 36" minimum Condition 1, 42" minimum Condition 2)
-5. Are cable entry/exit points shown? Where are they?
-6. Are there any shipping splits or modular joints visible?
+Specifically flag:
+- "ISSUE: No UL listing visible — IEC/CE only. Not acceptable for US installation per NEC 110.2, 110.3(B)"
+- "ISSUE: Equipment rated 400V/50Hz — verify compatibility with 480V/60Hz US system"
+- "ISSUE: SCCR not visible — must be verified against available fault current per NEC 110.9"
 
-Provide all dimensions you can read from the drawing."""
+If UL listing IS clearly visible, state: "UL Listed confirmed — [UL file number if visible]"."""
 
-NAMEPLATE_PROMPT = """You are reading an equipment nameplate or rating plate.
+CLEARANCE_PROMPT = """You are a senior electrical engineer reviewing this layout/GA drawing for NEC compliance.
 
-Extract every piece of information visible:
-1. Manufacturer
-2. Model/catalog number
-3. Serial number
-4. Voltage rating
-5. Current/ampere rating
-6. Frequency
-7. Phase configuration
-8. Short circuit rating (kAIC)
-9. Enclosure type (NEMA/IP)
-10. UL file number
-11. Any other certifications or ratings
+Check for these specific issues:
+1. WORKING CLEARANCE (NEC 110.26): For 480V equipment, minimum 36" (Condition 1) or 42" (Condition 2) in front. Measure any dimensions shown. Flag if less than required.
+2. DEDICATED SPACE (NEC 110.26(F)): Equipment width and depth extending to ceiling — any pipes, ducts, or other equipment directly above the panelboard/switchgear?
+3. DOOR SWING: Do equipment doors have room to open 90° minimum? Does a door swing conflict with adjacent equipment?
+4. CABLE ENTRY: Are cable entry points (top/bottom) shown? Is there adequate space for cable bending radius?
+5. EGRESS: Can a person exit the working space without reaching past the equipment? (NEC 110.26(C) — two exits required for >1200A equipment or >6ft long)
 
-List each item clearly. If something is not legible, note it."""
+For EVERY issue found, state: "ISSUE: [description with dimension if visible] — [NEC reference]"
+If you cannot read dimensions clearly, state: "ISSUE: Clearance dimension not legible — field verification required"."""
+
+NAMEPLATE_PROMPT = """You are a senior electrical engineer reading this equipment nameplate, rating plate, or data sheet page.
+
+Extract every piece of information you can read:
+- Manufacturer and model/catalog number
+- Voltage rating, current rating, frequency
+- Short-circuit rating (kAIC or SCCR)
+- UL file number or listing mark
+- Enclosure type (NEMA or IP rating)
+- Any other certifications (CE, IEC, CSA, etc.)
+
+Then check for issues:
+- "ISSUE: No UL listing visible" if no UL mark found
+- "ISSUE: Rated [voltage] — verify compatibility" if not standard US voltage (480V, 208V, 120V)
+- "ISSUE: kAIC rating of [X] may be insufficient" if interrupting rating appears low (<42kA for main equipment)
+- "ISSUE: [field] not legible" for any critical rating you cannot read
+
+Report what you find. Be specific with numbers and ratings."""
 
 
 def analyze_sld_page(file_path: str, page_number: int) -> Optional[VisionResult]:

@@ -81,18 +81,32 @@ def _run_vision_job(submittal_id: int):
             page_num = page_data["page"]
             page_type = page_data.get("page_type", "unknown")
             text_len = len(page_data.get("text", ""))
+            text_lower = page_data.get("text_lower", page_data.get("text", "").lower())
 
-            # SLD pages with little text — drawing needs visual reading
-            if page_type == PageType.SLD and text_len < 200:
-                pages_to_analyze.append((page_num, "sld", "SLD with minimal text — visual analysis needed"))
+            # SLD pages — always analyze visually regardless of text
+            if page_type == PageType.SLD:
+                pages_to_analyze.append((page_num, "sld", "Single-line diagram — visual review"))
 
-            # GA/layout drawings
-            if page_type == PageType.PLAN_DRAWING:
-                pages_to_analyze.append((page_num, "clearance", "Layout drawing — check clearances"))
+            # GA/layout drawings — check clearances
+            elif page_type == PageType.PLAN_DRAWING:
+                pages_to_analyze.append((page_num, "clearance", "Layout drawing — clearance check"))
 
-            # Pages with no text at all (likely scanned drawings)
-            if text_len < 30 and page_type not in (PageType.COVER_SHEET, PageType.TABLE_OF_CONTENTS):
-                pages_to_analyze.append((page_num, "nameplate", "No text layer — OCR/vision needed"))
+            # Cut sheets / data sheets — check UL listing
+            elif page_type == PageType.CUT_SHEET:
+                pages_to_analyze.append((page_num, "ul_listing", "Cut sheet — UL listing verification"))
+
+            # Pages that look like drawings (low text, not a schedule or cover)
+            elif text_len < 500 and page_type not in (
+                PageType.COVER_SHEET, PageType.TABLE_OF_CONTENTS,
+                PageType.PANEL_SCHEDULE, PageType.EQUIPMENT_SCHEDULE,
+                PageType.CABLE_SCHEDULE, PageType.LOAD_SCHEDULE,
+                PageType.GENERAL_NOTES, PageType.SPEC_SECTION,
+            ):
+                pages_to_analyze.append((page_num, "nameplate", "Drawing page — equipment identification"))
+
+            # Pages with nameplate keywords
+            elif any(kw in text_lower for kw in ["nameplate", "rating plate", "certified", "ul listed"]):
+                pages_to_analyze.append((page_num, "nameplate", "Contains nameplate/certification data"))
 
         # Cap at 50 pages to keep processing reasonable
         pages_to_analyze = pages_to_analyze[:50]
@@ -110,6 +124,9 @@ def _run_vision_job(submittal_id: int):
                     result = analyze_sld_page(submittal.file_path, page_num)
                 elif analysis_type == "clearance":
                     result = analyze_clearances(submittal.file_path, page_num)
+                elif analysis_type == "ul_listing":
+                    from app.services.vision_analyzer import analyze_cutsheet_for_ul
+                    result = analyze_cutsheet_for_ul(submittal.file_path, page_num)
                 else:
                     # Generic nameplate/OCR analysis
                     from app.services.vision_analyzer import analyze_nameplate
