@@ -57,7 +57,7 @@ def open_browser():
     time.sleep(5)
     print()
     print("=" * 50)
-    print("  DC Submittal Review Platform is running!")
+    print("  ArcLight is running!")
     print("  Opening browser to http://localhost:5173")
     print()
     print("  Close this window to stop the application.")
@@ -69,7 +69,7 @@ def open_browser():
 if __name__ == "__main__":
     print()
     print("=" * 50)
-    print("  DC Submittal Review Platform")
+    print("  ArcLight")
     print("  Starting up...")
     print("=" * 50)
     print()

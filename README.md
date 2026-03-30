@@ -47,11 +47,11 @@ python build_exe.py
 
 Replace **YourName** with your Windows username. This takes a few minutes the first time.
 
-When it finishes, you'll find **DC_Submittal_Review.exe** in the `dist` folder.
+When it finishes, you'll find **ArcLight.exe** in the `dist` folder.
 
 ### 4. Run It
 
-Double-click **DC_Submittal_Review.exe**. A terminal window opens and your browser loads the app automatically. That's it — no Python or Node.js needed to run the .exe.
+Double-click **ArcLight.exe**. A terminal window opens and your browser loads the app automatically. That's it — no Python or Node.js needed to run the .exe.
 
 ---
 

@@ -78,7 +78,7 @@ def create_launcher():
 
     launcher = os.path.join(BACKEND, "launcher.py")
     with open(launcher, "w") as f:
-        f.write('''"""Single-exe launcher for DC Submittal Review Platform."""
+        f.write('''"""ArcLight standalone launcher."""
 import os
 import sys
 import webbrowser
@@ -93,7 +93,7 @@ def open_browser():
     time.sleep(3)
     webbrowser.open("http://localhost:8000")
 
-print("DC Submittal Review Platform")
+print("ArcLight")
 print("Starting server...")
 print("Browser will open automatically.")
 print("Close this window to stop the application.")
@@ -116,7 +116,7 @@ def build_exe():
     subprocess.run([
         sys.executable, "-m", "PyInstaller",
         "--onefile",
-        "--name", "DC_Submittal_Review",
+        "--name", "ArcLight",
         "--add-data", f"app{os.pathsep}app",
         "--add-data", f"static{os.pathsep}static",
         "--hidden-import", "uvicorn.logging",
@@ -145,8 +145,8 @@ def build_exe():
 
     # Move to dist folder at root
     os.makedirs(DIST, exist_ok=True)
-    src = os.path.join(BACKEND, "dist", "DC_Submittal_Review.exe")
-    dst = os.path.join(DIST, "DC_Submittal_Review.exe")
+    src = os.path.join(BACKEND, "dist", "ArcLight.exe")
+    dst = os.path.join(DIST, "ArcLight.exe")
     if os.path.exists(src):
         shutil.move(src, dst)
         print(f"\n  SUCCESS: {dst}")
@@ -161,13 +161,13 @@ def cleanup():
         path = os.path.join(BACKEND, d)
         if os.path.exists(path):
             shutil.rmtree(path)
-    spec = os.path.join(BACKEND, "DC_Submittal_Review.spec")
+    spec = os.path.join(BACKEND, "ArcLight.spec")
     if os.path.exists(spec):
         os.remove(spec)
 
 
 if __name__ == "__main__":
-    print("\nDC Submittal Review Platform — Build Script")
+    print("\nArcLight — Build Script")
     print("=" * 60)
 
     build_frontend()
@@ -177,8 +177,8 @@ if __name__ == "__main__":
 
     print("\n" + "=" * 60)
     print("  BUILD COMPLETE")
-    print(f"  Executable: {os.path.join(DIST, 'DC_Submittal_Review.exe')}")
+    print(f"  Executable: {os.path.join(DIST, 'ArcLight.exe')}")
     print()
-    print("  To run: double-click DC_Submittal_Review.exe")
+    print("  To run: double-click ArcLight.exe")
     print("  No Python, Node.js, or terminal needed.")
     print("=" * 60)

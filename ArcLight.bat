@@ -1,5 +1,5 @@
 @echo off
-title DC Submittal Review Platform
+title ArcLight
 cd /d "%~dp0"
 python run.py
 pause
