@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -7,6 +8,31 @@ from app.models.database_models import ReviewComment
 from app.models.schemas import CommentCreate, CommentUpdate, CommentResponse
 
 router = APIRouter(prefix="/api/comments", tags=["comments"])
+
+
+@router.get("/export", response_class=PlainTextResponse)
+def export_comments(
+    submittal_id: int = None,
+    category: str = None,
+    db: Session = Depends(get_db),
+):
+    """Export comments as plain text for sharing."""
+    query = db.query(ReviewComment)
+    if submittal_id:
+        query = query.filter(ReviewComment.submittal_id == submittal_id)
+    if category:
+        query = query.filter(ReviewComment.category == category)
+    comments = query.order_by(ReviewComment.severity, ReviewComment.page_number).all()
+
+    lines = []
+    for c in comments:
+        lines.append(f"--- [{c.severity.upper()}] Page {c.page_number or '?'} | {c.status} | {c.reference_code or ''} ---")
+        lines.append(c.comment_text)
+        if c.resolution_notes:
+            lines.append(f"  Notes: {c.resolution_notes}")
+        lines.append("")
+
+    return "\n".join(lines)
 
 
 @router.get("/submittal/{submittal_id}", response_model=list[CommentResponse])
