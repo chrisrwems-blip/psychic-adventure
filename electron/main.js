@@ -4,6 +4,7 @@ const path = require('path');
 const http = require('http');
 const treeKill = require('tree-kill');
 const { BACKEND_PORT, VITE_PORT, HEALTH_URL, BACKEND_EXE_NAME } = require('./lib/constants');
+const { initAutoUpdater } = require('./lib/updater');
 
 const isDev = !app.isPackaged;
 
@@ -135,6 +136,10 @@ app.on('ready', async () => {
   }
 
   createWindow();
+
+  if (!isDev) {
+    initAutoUpdater(mainWindow);
+  }
 });
 
 app.on('window-all-closed', () => {

@@ -7,10 +7,12 @@
   "scripts": {
     "dev": "node scripts/dev.js",
     "build": "node scripts/build-backend.js && electron-builder",
+    "publish": "node scripts/build-backend.js && electron-builder --publish always",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
-    "tree-kill": "^1.2.2"
+    "tree-kill": "^1.2.2",
+    "electron-updater": "^6.3.0"
   },
   "devDependencies": {
     "electron": "^33.0.0",
@@ -26,6 +28,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "lib/**/*",
       "node_modules/tree-kill/**/*"
     ],
     "extraResources": [
@@ -35,6 +38,11 @@
         "filter": ["**/*"]
       }
     ],
+    "publish": {
+      "provider": "github",
+      "owner": "chrisrwems-blip",
+      "repo": "psychic-adventure"
+    },
     "win": {
       "target": ["nsis"],
       "icon": "build/icon.ico"
