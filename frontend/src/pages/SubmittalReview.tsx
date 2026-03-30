@@ -4,7 +4,7 @@ import {
   getSubmittal, runReview, getReviewResults, getComments,
   addComment, updateComment, generateEmail, getEmails, sendGeneratedEmail,
   getSubmittalPdfUrl, annotateSubmittal, getAnnotatedPdfUrl, getAnnotatedPdfDownloadUrl,
-  getReportUrl, compareRevision, getProfile, checkVisionAvailable,
+  getReportUrl, compareRevision, getProfile, checkVisionAvailable, getVisionStatus,
 } from '../api/client';
 import type { Submittal, ReviewResult, ReviewComment, GeneratedEmail } from '../types';
 
@@ -81,6 +81,7 @@ export default function SubmittalReview() {
   const [reviewerName, setReviewerName] = useState('');
   const [visionAvailable, setVisionAvailable] = useState(false);
   const [visionBackend, setVisionBackend] = useState('');
+  const [visionStatus, setVisionStatus] = useState<any>(null);
 
   useEffect(() => {
     if (submittalId) loadData();
@@ -126,7 +127,31 @@ export default function SubmittalReview() {
     } catch (e) {
       console.error('Failed to load', e);
     }
+
+    // Poll vision status
+    try {
+      const vs = await getVisionStatus(id);
+      setVisionStatus(vs.data);
+    } catch (e) { /* vision not started */ }
   };
+
+  // Poll vision status while running
+  useEffect(() => {
+    if (!visionStatus || !submittalId) return;
+    if (visionStatus.status === 'running' || visionStatus.status === 'starting') {
+      const interval = setInterval(async () => {
+        try {
+          const vs = await getVisionStatus(Number(submittalId));
+          setVisionStatus(vs.data);
+          if (vs.data.status === 'complete' || vs.data.status === 'error') {
+            clearInterval(interval);
+            loadData();
+          }
+        } catch (e) { clearInterval(interval); }
+      }, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [visionStatus?.status, submittalId]);
 
   const handleRunReview = async () => {
     setReviewing(true);
@@ -485,6 +510,31 @@ export default function SubmittalReview() {
               <div className="bg-blue-50 dark:bg-blue-900/30 rounded p-2"><span className="text-blue-600 dark:text-blue-400 block text-xs">Equipment Found</span><strong className="text-lg dark:text-slate-100">{reviewSummary.equipment_count}</strong></div>
               <div className="bg-purple-50 dark:bg-purple-900/30 rounded p-2"><span className="text-purple-600 dark:text-purple-400 block text-xs">Cross-Ref Checks</span><strong className="text-lg dark:text-slate-100">{reviewSummary.cross_reference_findings}</strong></div>
               <div className="bg-orange-50 dark:bg-orange-900/30 rounded p-2"><span className="text-orange-600 dark:text-orange-400 block text-xs">Major Issues</span><strong className="text-lg text-orange-700 dark:text-orange-400">{reviewSummary.major_issues}</strong></div>
+            </div>
+          )}
+
+          {/* Vision AI status */}
+          {visionStatus && visionStatus.status !== 'not_started' && (
+            <div className="flex items-center gap-3 text-sm bg-purple-50 dark:bg-purple-900/20 rounded p-2">
+              <svg className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+              </svg>
+              <span className="text-purple-700 dark:text-purple-300 font-medium">Vision AI</span>
+              {visionStatus.status === 'running' || visionStatus.status === 'starting' ? (
+                <span className="text-purple-600 dark:text-purple-400">
+                  Analyzing... {visionStatus.pages_complete}/{visionStatus.pages_total} pages
+                </span>
+              ) : visionStatus.status === 'complete' ? (
+                <span className="text-purple-600 dark:text-purple-400">
+                  {visionStatus.pages_complete} pages analyzed, {visionStatus.findings} findings
+                </span>
+              ) : visionStatus.status === 'error' ? (
+                <span className="text-red-600 dark:text-red-400">Analysis failed</span>
+              ) : null}
+              {visionStatus.backend && (
+                <span className="text-xs text-purple-400 dark:text-purple-500 ml-auto">via {visionStatus.backend}</span>
+              )}
             </div>
           )}
 

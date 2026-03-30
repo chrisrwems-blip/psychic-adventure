@@ -15,7 +15,7 @@ const QUICK_TEMPLATES = [
 export default function CommentTracker() {
   const [comments, setComments] = useState<ReviewComment[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [filters, setFilters] = useState({ status: 'open', severity: '', project_id: '' });
+  const [filters, setFilters] = useState({ status: 'open', severity: '', project_id: '', source: '' });
   const [replyingTo, setReplyingTo] = useState<number | null>(null);
   const [replyText, setReplyText] = useState('');
 
@@ -80,7 +80,15 @@ export default function CommentTracker() {
   };
 
   const severityOrder: Record<string, number> = { critical: 0, major: 1, minor: 2, info: 3 };
-  const sorted = [...comments].sort((a, b) => (severityOrder[a.severity] ?? 9) - (severityOrder[b.severity] ?? 9));
+  const filtered = filters.source
+    ? comments.filter((c) => {
+        if (filters.source === 'vision') return c.category === 'vision_analysis' || c.comment_text.startsWith('[Vision AI]');
+        if (filters.source === 'engine') return c.category === 'automated_review';
+        if (filters.source === 'manual') return !c.category || (c.category !== 'vision_analysis' && c.category !== 'automated_review');
+        return true;
+      })
+    : comments;
+  const sorted = [...filtered].sort((a, b) => (severityOrder[a.severity] ?? 9) - (severityOrder[b.severity] ?? 9));
 
   return (
     <div className="space-y-6">
@@ -141,6 +149,16 @@ export default function CommentTracker() {
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
+          <select
+            value={filters.source}
+            onChange={(e) => setFilters({ ...filters, source: e.target.value })}
+            className="input text-sm"
+          >
+            <option value="">All Sources</option>
+            <option value="vision">Vision AI</option>
+            <option value="engine">Review Engine</option>
+            <option value="manual">Manual</option>
+          </select>
           <span className="text-xs text-slate-400 dark:text-slate-500 ml-auto">{comments.length} results</span>
         </div>
       </div>
@@ -155,6 +173,8 @@ export default function CommentTracker() {
           const badgeClass = c.severity === 'critical' ? 'badge-critical' :
             c.severity === 'major' ? 'badge-major' :
             c.severity === 'minor' ? 'badge-minor' : 'badge-info';
+
+          const isVision = c.category === 'vision_analysis' || c.comment_text.startsWith('[Vision AI]');
 
           const statusColor = c.status === 'open' ? 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 ring-1 ring-red-200 dark:ring-red-800' :
             c.status === 'resolved' ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 ring-1 ring-emerald-200 dark:ring-emerald-800' :
@@ -174,6 +194,15 @@ export default function CommentTracker() {
                   <div className="flex items-center gap-2 flex-wrap mb-2">
                     <span className={`badge ${badgeClass}`}>{c.severity}</span>
                     <span className={`badge ${statusColor}`}>{c.status}</span>
+                    {isVision && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 ring-1 ring-purple-200 dark:ring-purple-800">
+                        <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                        </svg>
+                        Vision AI
+                      </span>
+                    )}
                     {c.reference_code && (
                       <span className="text-xs font-mono text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-700 px-2 py-0.5 rounded">
                         {c.reference_code}
