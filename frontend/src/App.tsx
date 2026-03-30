@@ -1,5 +1,7 @@
+import { useState, useEffect } from 'react';
 import { Routes, Route, Link, useLocation } from 'react-router-dom';
 import { useTheme } from './contexts/ThemeContext';
+import { checkForUpdate } from './api/client';
 import Dashboard from './pages/Dashboard';
 import ProjectDetail from './pages/ProjectDetail';
 import SubmittalReview from './pages/SubmittalReview';
@@ -18,9 +20,43 @@ const navItems = [
 export default function App() {
   const location = useLocation();
   const { theme, toggleTheme } = useTheme();
+  const [updateInfo, setUpdateInfo] = useState<any>(null);
+  const [updateDismissed, setUpdateDismissed] = useState(false);
+
+  useEffect(() => {
+    checkForUpdate()
+      .then(res => { if (res.data.update_available) setUpdateInfo(res.data); })
+      .catch(() => {});
+  }, []);
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 transition-colors">
+      {/* Update Banner */}
+      {updateInfo && !updateDismissed && (
+        <div className="bg-blue-600 text-white text-sm">
+          <div className="max-w-[1400px] mx-auto px-6 py-2 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
+              </svg>
+              <span>
+                <strong>ArcLight update available</strong>
+                {updateInfo.latest_message && <span className="ml-2 opacity-80">— {updateInfo.latest_message}</span>}
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-xs opacity-70">{updateInfo.current_commit} → {updateInfo.latest_commit}</span>
+              <button
+                onClick={() => setUpdateDismissed(true)}
+                className="text-white/70 hover:text-white text-xs"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white shadow-xl border-b border-slate-700">
         <div className="max-w-[1400px] mx-auto px-6 py-0 flex items-center justify-between">

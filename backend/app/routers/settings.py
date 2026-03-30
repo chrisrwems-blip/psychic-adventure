@@ -109,3 +109,19 @@ def save_profile(request: ProfileSettings):
     """Save profile and preference settings."""
     PROFILE_FILE.write_text(json.dumps(request.model_dump(), indent=2))
     return {"status": "saved"}
+
+
+# --- Update Check ---
+
+@router.get("/update/check")
+def check_update():
+    """Check GitHub for a newer version of ArcLight."""
+    from app.services.update_checker import check_for_update
+    return check_for_update()
+
+
+@router.get("/update/version")
+def get_version():
+    """Get the current local version."""
+    from app.services.update_checker import get_local_version
+    return get_local_version()

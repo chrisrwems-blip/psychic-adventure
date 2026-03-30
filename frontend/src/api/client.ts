@@ -94,6 +94,7 @@ export const saveProfile = (data: {
 }) => api.post('/settings/profile', data);
 export const sendGeneratedEmail = (emailId: number, data: { to: string; cc?: string }) =>
   api.post(`/emails/${emailId}/send`, data);
+export const checkForUpdate = () => api.get('/settings/update/check');
 
 // --- Dashboard ---
 export const getDashboard = () => api.get('/dashboard');
