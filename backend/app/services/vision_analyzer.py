@@ -182,7 +182,7 @@ Then check for these specific issues and flag every one you find:
 
 For EVERY issue found, state: "ISSUE: [description] — [relevant NEC code if applicable]"
 If no issues found for a check, skip it. Do NOT say "no issues found" — only report actual problems.
-If you cannot read something clearly, report: "ISSUE: [item] rating is not legible — verify in field""""
+If you cannot read something clearly, report: 'ISSUE: [item] rating is not legible - verify in field'"""
 
 UL_LISTING_PROMPT = """You are a senior electrical engineer checking this equipment data sheet for US code compliance.
 
