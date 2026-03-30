@@ -18,6 +18,8 @@ import sys
 import os
 import shutil
 
+NPM = shutil.which("npm") or "npm"
+
 ROOT = os.path.dirname(os.path.abspath(__file__))
 BACKEND = os.path.join(ROOT, "backend")
 FRONTEND = os.path.join(ROOT, "frontend")
@@ -32,8 +34,8 @@ def step(msg):
 
 def build_frontend():
     step("Building frontend (React → static files)")
-    subprocess.run(["npm", "install"], cwd=FRONTEND, shell=True, check=True)
-    subprocess.run(["npm", "run", "build"], cwd=FRONTEND, shell=True, check=True)
+    subprocess.run([NPM, "install"], cwd=FRONTEND, check=True)
+    subprocess.run([NPM, "run", "build"], cwd=FRONTEND, check=True)
 
     # Copy built files to backend/static so the backend can serve them
     static_dir = os.path.join(BACKEND, "static")
@@ -64,7 +66,10 @@ if os.path.exists(STATIC_DIR):
     @app.get("/{path:path}")
     async def serve_frontend(path: str):
         """Serve the React app for any non-API route."""
-        file_path = os.path.join(STATIC_DIR, path)
+        file_path = os.path.realpath(os.path.join(STATIC_DIR, path))
+        static_root = os.path.realpath(STATIC_DIR)
+        if not file_path.startswith(static_root + os.sep) and file_path != static_root:
+            return FileResponse(os.path.join(STATIC_DIR, "index.html"))
         if os.path.isfile(file_path):
             return FileResponse(file_path)
         return FileResponse(os.path.join(STATIC_DIR, "index.html"))
@@ -104,7 +109,7 @@ threading.Thread(target=open_browser, daemon=True).start()
 import uvicorn
 from app.production import app
 
-uvicorn.run(app, host="0.0.0.0", port=8000)
+uvicorn.run(app, host="127.0.0.1", port=8000)
 ''')
     print(f"  Created {launcher}")
 

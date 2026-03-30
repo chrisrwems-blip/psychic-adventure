@@ -1,5 +1,6 @@
 """Single-process launcher — runs both backend and frontend from one script."""
 import os
+import shutil
 import sys
 import subprocess
 import time
@@ -9,6 +10,7 @@ import webbrowser
 ROOT = os.path.dirname(os.path.abspath(__file__))
 BACKEND_DIR = os.path.join(ROOT, "backend")
 FRONTEND_DIR = os.path.join(ROOT, "frontend")
+NPM = shutil.which("npm") or "npm"
 
 
 def install_deps():
@@ -24,11 +26,10 @@ def install_deps():
     print("[2/2] Checking frontend dependencies...")
     if not os.path.exists(os.path.join(FRONTEND_DIR, "node_modules")):
         subprocess.run(
-            ["npm", "install", "--silent"],
+            [NPM, "install", "--silent"],
             cwd=FRONTEND_DIR,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            shell=True,
         )
     print("       Dependencies OK.")
 
@@ -37,7 +38,7 @@ def run_backend():
     """Run the FastAPI backend."""
     print("       Starting backend on http://localhost:8000 ...")
     subprocess.run(
-        [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"],
+        [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000"],
         cwd=BACKEND_DIR,
     )
 
@@ -46,9 +47,8 @@ def run_frontend():
     """Run the Vite frontend dev server."""
     print("       Starting frontend on http://localhost:5173 ...")
     subprocess.run(
-        ["npm", "run", "dev"],
+        [NPM, "run", "dev"],
         cwd=FRONTEND_DIR,
-        shell=True,
     )
 
 

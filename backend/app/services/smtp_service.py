@@ -1,4 +1,5 @@
 """SMTP email sending service with auto-detection of common providers."""
+import base64
 import json
 import os
 import smtplib
@@ -51,10 +52,11 @@ def save_settings(email: str, password: str, host: str, port: int, display_name:
     """Save SMTP settings to local config file."""
     settings = {
         "email": email,
-        "password": password,
+        "password": base64.b64encode(password.encode()).decode(),
         "host": host,
         "port": port,
         "display_name": display_name or email.split("@")[0].title(),
+        "_encoding": "base64",
     }
     SETTINGS_FILE.write_text(json.dumps(settings, indent=2))
     return {"status": "saved"}
@@ -65,7 +67,11 @@ def load_settings() -> dict | None:
     if not SETTINGS_FILE.exists():
         return None
     try:
-        return json.loads(SETTINGS_FILE.read_text())
+        settings = json.loads(SETTINGS_FILE.read_text())
+        # Decode password (backward-compatible with older plaintext files)
+        if settings.get("_encoding") == "base64":
+            settings["password"] = base64.b64decode(settings["password"].encode()).decode()
+        return settings
     except (json.JSONDecodeError, IOError):
         return None
 

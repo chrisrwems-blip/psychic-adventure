@@ -15,6 +15,7 @@ from app.services.full_review_service import run_full_review
 from app.services.report_generator import generate_review_report
 from app.services.revision_diff import compare_revisions
 from app.review_engine.registry import get_available_equipment_types
+from app.utils.path_safety import safe_filename, validate_pdf_upload
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +144,8 @@ def download_review_report(submittal_id: int, db: Session = Depends(get_db)):
     try:
         report_path = generate_review_report(db, submittal_id)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Report generation failed: {e}")
+        logger.error("Report generation failed for submittal %d: %s", submittal_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Report generation failed. Check server logs for details.")
 
     if not os.path.exists(report_path):
         raise HTTPException(status_code=500, detail="Report file was not created")
@@ -234,12 +236,11 @@ async def compare_revision(
     if not submittal.file_path or not os.path.exists(submittal.file_path):
         raise HTTPException(status_code=400, detail="Original submittal PDF not found on disk")
 
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Revision file must be a PDF")
+    await validate_pdf_upload(file)
 
     # Save the revision PDF to a temp location
     os.makedirs(UPLOAD_DIR, exist_ok=True)
-    revision_filename = f"revision_{submittal_id}_{file.filename}"
+    revision_filename = f"revision_{submittal_id}_{safe_filename(file.filename)}"
     revision_path = os.path.join(UPLOAD_DIR, revision_filename)
 
     try:
@@ -250,7 +251,8 @@ async def compare_revision(
         return result
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Revision comparison failed: {e}")
+        logger.error("Revision comparison failed for submittal %d: %s", submittal_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Revision comparison failed. Check server logs for details.")
 
     finally:
         # Clean up the temporary revision file
@@ -344,9 +346,11 @@ async def validate_against_spec(
     if not submittal:
         raise HTTPException(status_code=404, detail="Submittal not found")
 
+    await validate_pdf_upload(file)
+
     # Save spec file temporarily
     spec_dir = tempfile.mkdtemp()
-    spec_path = os.path.join(spec_dir, file.filename)
+    spec_path = os.path.join(spec_dir, safe_filename(file.filename))
     with open(spec_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 

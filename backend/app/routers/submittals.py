@@ -9,6 +9,7 @@ from app.database import get_db
 from app.models.database_models import Submittal, ReviewComment
 from app.models.schemas import SubmittalResponse
 from app.services.pdf_parser import get_page_count
+from app.utils.path_safety import safe_filename, validate_pdf_upload
 
 router = APIRouter(prefix="/api/submittals", tags=["submittals"])
 
@@ -57,11 +58,14 @@ async def upload_submittal(
     contractor: str = Form(None),
     db: Session = Depends(get_db),
 ):
+    # Validate upload
+    await validate_pdf_upload(file)
+
     # Save file
     project_dir = os.path.join(UPLOAD_DIR, str(project_id))
     os.makedirs(project_dir, exist_ok=True)
 
-    file_path = os.path.join(project_dir, file.filename)
+    file_path = os.path.join(project_dir, safe_filename(file.filename))
     with open(file_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
