@@ -1,0 +1,49 @@
+name: Build and Release ArcLight
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install pyinstaller
+
+      - name: Install Poppler (for pdf2image)
+        run: |
+          choco install poppler -y
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Install Electron dependencies
+        run: |
+          cd electron
+          npm ci
+
+      - name: Build backend sidecar + package Electron app
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd electron
+          npm run publish
