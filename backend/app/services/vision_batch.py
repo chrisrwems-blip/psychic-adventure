@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 from app.database import SessionLocal
 from app.models.database_models import Submittal, ReviewResult, ReviewComment

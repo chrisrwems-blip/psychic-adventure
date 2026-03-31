@@ -43,6 +43,8 @@ def verify_findings(db: Session, submittal_id: int) -> dict:
     if not findings:
         return {"verified": 0, "message": "No findings to verify"}
 
+    print(f"[verify] Starting verification of {len(findings)} findings")
+
     verified = 0
     upgraded = 0
     downgraded = 0
@@ -52,11 +54,15 @@ def verify_findings(db: Session, submittal_id: int) -> dict:
         # Extract page number from finding details
         page_num = _extract_page_number(finding.details or finding.check_name)
         if not page_num:
+            print(f"[verify] Skipping finding {finding.id}: no page number found")
             continue
+
+        print(f"[verify] Verifying finding {finding.id} on page {page_num}: {finding.check_name[:60]}")
 
         # Convert page to image
         image_bytes = _page_to_image(submittal.file_path, page_num)
         if not image_bytes:
+            print(f"[verify] Skipping finding {finding.id}: image conversion failed for page {page_num}")
             logger.warning("[verify] Could not convert page %d to image", page_num)
             continue
 
@@ -87,12 +93,13 @@ Then explain your reasoning in 2-3 sentences."""
 
         answer = _ask_claude(image_bytes, prompt, api_key)
         if not answer:
+            print(f"[verify] No Claude response for finding {finding.id}")
             logger.warning("[verify] No response for finding %d on page %d", finding.id, page_num)
             continue
 
         verified += 1
-        answer_upper = answer.strip().upper()
         first_line = answer.strip().split("\n")[0].upper()
+        print(f"[verify] Finding {finding.id} verdict: {first_line[:80]}")
 
         # Update finding based on Claude's verdict
         if "FALSE POSITIVE" in first_line:
@@ -125,7 +132,7 @@ Then explain your reasoning in 2-3 sentences."""
 
         db.commit()
 
-    return {
+    result = {
         "verified": verified,
         "total_findings": len(findings),
         "false_positives_removed": upgraded,
@@ -133,6 +140,8 @@ Then explain your reasoning in 2-3 sentences."""
         "skipped": len(findings) - verified,
         "estimated_cost": f"${verified * 0.02:.2f}",
     }
+    print(f"[verify] COMPLETE: {result}")
+    return result
 
 
 def _extract_page_number(text: str) -> int | None:

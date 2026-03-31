@@ -18,6 +18,7 @@ from dataclasses import dataclass
 import logging
 
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 
 @dataclass
@@ -38,10 +39,13 @@ def _page_to_image(file_path: str, page_number: int, dpi: int = 150) -> Optional
             buf = BytesIO()
             images[0].save(buf, format="PNG")
             logger.info("[vision] Page %d converted to image (%d bytes)", page_number, buf.tell())
+            print(f"[vision] Page {page_number} converted to image ({buf.tell()} bytes)")
             return buf.getvalue()
         logger.warning("[vision] Page %d: convert_from_path returned no images", page_number)
+        print(f"[vision] Page {page_number}: no images returned")
     except Exception as e:
         logger.error("[vision] Page %d image conversion failed: %s", page_number, e)
+        print(f"[vision] Page {page_number} image conversion FAILED: {e}")
     return None
 
 
@@ -102,12 +106,12 @@ def _ask_claude(image_bytes: bytes, prompt: str, api_key: str) -> Optional[str]:
         if response.ok:
             data = response.json()
             answer = data.get("content", [{}])[0].get("text", "")
-            logger.info("[vision] Claude response for page (%d chars): %s", len(answer), answer[:100])
+            print(f"[vision] Claude response ({len(answer)} chars): {answer[:100]}")
             return answer
         else:
-            logger.error("[vision] Claude API error %d: %s", response.status_code, response.text[:200])
+            print(f"[vision] Claude API error {response.status_code}: {response.text[:200]}")
     except Exception as e:
-        logger.error("[vision] Claude API call failed: %s", e)
+        print(f"[vision] Claude API call FAILED: {e}")
     return None
 
 
