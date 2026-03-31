@@ -106,6 +106,37 @@ def trigger_batch_review(
     )
 
 
+@router.post("/{submittal_id}/verify")
+def verify_review_findings(
+    submittal_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """Run AI-powered verification on FAIL and NEEDS REVIEW findings.
+
+    Sends each flagged finding's page image to Claude and asks whether
+    the finding is correct, a false positive, or inconclusive.
+    Runs in background; poll /results to see updated findings.
+    """
+    submittal = db.query(Submittal).filter(Submittal.id == submittal_id).first()
+    if not submittal:
+        raise HTTPException(status_code=404, detail="Submittal not found")
+
+    from app.services.smart_verify import verify_findings
+    from app.database import SessionLocal
+
+    def _run_verify():
+        session = SessionLocal()
+        try:
+            result = verify_findings(session, submittal_id)
+            logger.info("[verify] Complete: %s", result)
+        finally:
+            session.close()
+
+    background_tasks.add_task(_run_verify)
+    return {"status": "started", "message": "Verification running in background. Reload results to see updates."}
+
+
 @router.get("/{submittal_id}/results", response_model=list[ReviewResultResponse])
 def get_review_results(submittal_id: int, db: Session = Depends(get_db)):
     """Get review results for a submittal."""
