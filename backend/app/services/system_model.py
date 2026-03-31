@@ -137,9 +137,30 @@ class SystemModel:
     is_modular_data_center: bool = False  # NEC 646, UL 2755
     unconfirmed_items: list = field(default_factory=list)  # ["INTERLOCKING TBC", ...]
 
+    # Physical dimensions (from extracted text)
+    panel_width_mm: Optional[float] = None
+    panel_height_mm: Optional[float] = None
+    panel_depth_mm: Optional[float] = None
+    panel_weight_kg: Optional[float] = None
+
+    # Breaker mounting types found
+    withdrawable_breakers: list = field(default_factory=list)
+    fixed_breakers: list = field(default_factory=list)
+    plugin_breakers: list = field(default_factory=list)
+
+    # Topology patterns detected
+    has_dual_mains: bool = False
+    has_ups_feed_through: bool = False  # "TO IT" / "FROM IT" pattern
+    has_bypass: bool = False
+    has_loadbank: bool = False
+    has_coupler: bool = False
+    mains_count: int = 0
+    coupler_count: int = 0
+
     # Raw counts for context
     total_equipment_count: int = 0
     total_pages: int = 0
+    rack_plug_count: int = 0  # number of rack plug circuits
 
 
 # ---------------------------------------------------------------------------
@@ -311,8 +332,48 @@ def build_system_model(
                     "page": eq.page_number,
                 })
 
+    # --- Physical dimensions from text ---
+    full_text = "\n".join(p.get("text", "") for p in pages)
+    for pattern, field_name in [
+        (r'width\s*[:=]\s*(?:mm\s*)?(\d[\d,\.]+)', "panel_width_mm"),
+        (r'height\s*[:=]\s*(?:mm\s*)?(\d[\d,\.]+)', "panel_height_mm"),
+        (r'depth\s*[:=]\s*(?:mm\s*)?(\d[\d,\.]+)', "panel_depth_mm"),
+        (r'weight\s*[:=]\s*(?:kg\s*)?(\d[\d,\.]+)', "panel_weight_kg"),
+    ]:
+        m = re.search(pattern, full_text, re.IGNORECASE)
+        if m:
+            try:
+                setattr(model, field_name, float(m.group(1).replace(",", "")))
+            except ValueError:
+                pass
+
+    # --- Breaker mounting types and topology patterns ---
+    full_text_combined = full_text.lower()
+    for b in model.breakers:
+        raw = b.raw_text.lower()
+        if "withdrawable" in raw or "withdrawlable" in raw or "drawout" in raw:
+            model.withdrawable_breakers.append(b.designation)
+        elif "plug" in raw and "in" in raw:
+            model.plugin_breakers.append(b.designation)
+        elif "fixed" in raw:
+            model.fixed_breakers.append(b.designation)
+
+        if b.is_service_entrance:
+            model.mains_count += 1
+
+    model.has_dual_mains = model.mains_count >= 2
+    model.has_ups_feed_through = ("to it" in full_text_combined and "from it" in full_text_combined)
+    model.has_bypass = "bypass" in full_text_combined
+    model.has_loadbank = "loadbank" in full_text_combined or "load bank" in full_text_combined
+    model.has_coupler = "coupler" in full_text_combined or "tie" in full_text_combined
+    model.coupler_count = full_text_combined.count("coupler")
+
+    # Count rack plugs
+    rack_match = re.findall(r'(\d+)\s*x\s*.*?rack\s*plug', full_text_combined)
+    model.rack_plug_count = sum(int(x) for x in rack_match)
+
     # --- Document-level flags from full text ---
-    full_text_lower = "\n".join(p.get("text_lower", "") for p in pages)
+    full_text_lower = full_text_combined
 
     model.has_afc_label = any(kw in full_text_lower for kw in [
         "available fault current", "afc label", "nec 110.24",
@@ -430,6 +491,14 @@ def check_model(model: SystemModel) -> list[ModelFinding]:
     findings.extend(_check_working_clearance(model))
     findings.extend(_check_separately_derived_grounding(model))
     findings.extend(_check_energy_storage(model))
+    findings.extend(_check_constructability(model))
+    findings.extend(_check_thermal(model))
+    findings.extend(_check_operations_maintainability(model))
+    findings.extend(_check_protection_philosophy(model))
+    findings.extend(_check_ups_topology(model))
+    findings.extend(_check_cable_routing(model))
+    findings.extend(_check_metering_monitoring(model))
+    findings.extend(_check_missing_designations(model))
     findings.extend(_check_document_completeness(model))
     findings.extend(_check_jurisdiction_issues(model))
     findings.extend(_check_unconfirmed_items(model))
@@ -885,6 +954,336 @@ def _check_voltage_drop(model: SystemModel) -> list[ModelFinding]:
 # ---------------------------------------------------------------------------
 #  Document Completeness Checks
 # ---------------------------------------------------------------------------
+
+# ===========================================================================
+#  ENGINEERING REASONING CHECKS
+#  These think about whether the equipment will actually work, not just
+#  whether it complies with a code article.
+# ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+#  Constructability — will it fit, can you install it, can you move it?
+# ---------------------------------------------------------------------------
+
+def _check_constructability(model: SystemModel) -> list[ModelFinding]:
+    findings = []
+
+    # Leviathan envelope: 13,600mm wide, ~3,600mm electrical zone
+    LEVIATHAN_WIDTH_MM = 13600
+    LEVIATHAN_ELEC_ZONE_MM = 3600  # approximate
+
+    if model.panel_width_mm:
+        # Does the panel fit in the Leviathan?
+        if model.panel_width_mm > LEVIATHAN_WIDTH_MM * 0.95:
+            findings.append(ModelFinding(
+                check_id="ENG-FIT-WIDTH",
+                severity="critical",
+                description=(f"Panel width {model.panel_width_mm:.0f}mm vs Leviathan width "
+                             f"{LEVIATHAN_WIDTH_MM}mm — only {LEVIATHAN_WIDTH_MM - model.panel_width_mm:.0f}mm "
+                             f"clearance total. How does it get through the door? Does it ship "
+                             f"in sections? What's the assembly sequence on site?"),
+                reference="Constructability",
+            ))
+        elif model.panel_width_mm > LEVIATHAN_WIDTH_MM * 0.85:
+            findings.append(ModelFinding(
+                check_id="ENG-FIT-WIDTH",
+                severity="major",
+                description=(f"Panel width {model.panel_width_mm:.0f}mm is {model.panel_width_mm/LEVIATHAN_WIDTH_MM*100:.0f}% "
+                             f"of Leviathan width ({LEVIATHAN_WIDTH_MM}mm). Tight fit. "
+                             f"Confirm transport sectionalizing, lifting points, and "
+                             f"assembly sequence. Verify cable access on both sides."),
+                reference="Constructability",
+            ))
+
+    if model.panel_depth_mm:
+        # NEC 110.26 working clearance vs physical depth
+        required_clearance_mm = 1067  # 42 inches = 1067mm for Condition 2 at 480V
+        if model.panel_depth_mm + required_clearance_mm > LEVIATHAN_ELEC_ZONE_MM:
+            findings.append(ModelFinding(
+                check_id="ENG-FIT-DEPTH",
+                severity="critical",
+                description=(f"Panel depth {model.panel_depth_mm:.0f}mm + NEC 110.26 working clearance "
+                             f"{required_clearance_mm}mm = {model.panel_depth_mm + required_clearance_mm:.0f}mm "
+                             f"total required. Verify this fits in the electrical plant zone. "
+                             f"If rear access is needed, add another {required_clearance_mm}mm."),
+                reference="NEC 110.26, Constructability",
+            ))
+
+    # No seismic rating on transportable equipment
+    if model.is_modular_data_center or model.panel_width_mm:
+        has_seismic = any(
+            "seismic" in b.raw_text.lower() or "asce" in b.raw_text.lower()
+            for b in model.breakers
+        )
+        if not has_seismic:
+            findings.append(ModelFinding(
+                check_id="ENG-SEISMIC",
+                severity="major",
+                description=("No seismic rating specified. Leviathan deploys to unknown sites — "
+                             "ASCE 7 seismic requirements vary by location. Switchgear mounting "
+                             "method and seismic certification (SDS/SD1) must be documented."),
+                reference="IBC/ASCE 7",
+            ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+#  Thermal — will it overheat in an enclosed modular unit?
+# ---------------------------------------------------------------------------
+
+def _check_thermal(model: SystemModel) -> list[ModelFinding]:
+    findings = []
+
+    # Estimate heat dissipation from breakers
+    # Rule of thumb: ACB power loss ≈ 0.03% of rated current × voltage per pole
+    # For a 4000A ACB at 480V: ~2-4kW per breaker
+    total_breaker_amps = sum(b.frame_amps or 0 for b in model.breakers)
+
+    if total_breaker_amps > 5000 and model.panel_depth_mm and model.panel_depth_mm < 1000:
+        findings.append(ModelFinding(
+            check_id="ENG-THERMAL",
+            severity="major",
+            description=(f"Total breaker capacity {total_breaker_amps}A in an enclosure "
+                         f"{model.panel_depth_mm:.0f}mm deep. Significant heat dissipation "
+                         f"in a confined space. Confirm: forced ventilation in switchgear room? "
+                         f"Ambient temperature derating applied? Maximum operating temperature "
+                         f"for EKIP trip units (typically 70°C)?"),
+            reference="IEC 61439-1, IEEE C37.20",
+        ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+#  Operations & Maintainability — can someone safely service this?
+# ---------------------------------------------------------------------------
+
+def _check_operations_maintainability(model: SystemModel) -> list[ModelFinding]:
+    findings = []
+
+    # Fixed breakers on critical IT paths can't be racked out for maintenance
+    critical_fixed = []
+    for b in model.breakers:
+        if b.designation in model.fixed_breakers:
+            desc = (b.feeds_description or b.raw_text[:40]).lower()
+            if any(kw in desc for kw in ["it", "ups", "mech", "rack", "critical"]):
+                critical_fixed.append(b.designation)
+
+    if critical_fixed:
+        findings.append(ModelFinding(
+            check_id="ENG-MAINT-FIXED",
+            severity="major",
+            description=(f"Fixed-mount breakers on critical paths: {', '.join(critical_fixed[:5])}. "
+                         f"Fixed breakers cannot be racked out for maintenance — the circuit "
+                         f"must be de-energized to service the breaker. For Tier III concurrent "
+                         f"maintainability, critical path breakers should be withdrawable. "
+                         f"Confirm this is acceptable for the uptime requirements."),
+            reference="Uptime Tier III, Maintainability",
+        ))
+
+    # Withdrawable vs fixed count for situational awareness
+    if model.withdrawable_breakers and model.fixed_breakers:
+        total = len(model.withdrawable_breakers) + len(model.fixed_breakers) + len(model.plugin_breakers)
+        if total > 0:
+            fixed_pct = len(model.fixed_breakers) / total * 100
+            if fixed_pct > 50:
+                findings.append(ModelFinding(
+                    check_id="ENG-MAINT-RATIO",
+                    severity="info",
+                    description=(f"{len(model.fixed_breakers)} of {total} breakers are fixed-mount "
+                                 f"({fixed_pct:.0f}%). Consider withdrawable for critical circuits "
+                                 f"to enable concurrent maintenance."),
+                    reference="Uptime Tier III",
+                ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+#  Protection Philosophy — does the topology make sense?
+# ---------------------------------------------------------------------------
+
+def _check_protection_philosophy(model: SystemModel) -> list[ModelFinding]:
+    findings = []
+
+    # Dual mains without clear interlock
+    if model.has_dual_mains:
+        has_interlock = any("interlock" in item.lower() for item in model.unconfirmed_items)
+        has_confirmed_interlock = any(
+            "interlock" in b.raw_text.lower() and "tbc" not in b.raw_text.lower()
+            for b in model.breakers
+        )
+        if not has_confirmed_interlock:
+            findings.append(ModelFinding(
+                check_id="ENG-PROT-INTERLOCK",
+                severity="critical",
+                description=(f"Dual mains detected ({model.mains_count} service entrance breakers) "
+                             f"but interlock scheme is not confirmed. Without mechanical or "
+                             f"electrical interlocking, both sources could be paralleled — "
+                             f"fault current doubles, coordination study is invalid, and "
+                             f"available fault current may exceed equipment ratings."),
+                reference="NEC 700.5, Uptime Institute",
+            ))
+
+    # Loadbank breaker without clear purpose in protection hierarchy
+    if model.has_loadbank:
+        findings.append(ModelFinding(
+            check_id="ENG-PROT-LOADBANK",
+            severity="info",
+            description=("Loadbank breaker present — confirm its position in the protection "
+                         "hierarchy. Is it interlocked with the mains? Does the coordination "
+                         "study include the loadbank circuit? What's the transfer sequence?"),
+            reference="Commissioning Requirements",
+        ))
+
+    # Couplers without clear topology explanation
+    if model.coupler_count >= 2:
+        findings.append(ModelFinding(
+            check_id="ENG-PROT-COUPLER",
+            severity="major",
+            description=(f"{model.coupler_count} bus couplers detected. Confirm: main-tie-main "
+                         f"topology? Which bus sections are the couplers connecting? What is "
+                         f"the coupler's normal operating position (open or closed)? The "
+                         f"coordination study must cover all switching states."),
+            reference="IEEE C37.20, Protection Philosophy",
+        ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+#  UPS Topology — trace the power path
+# ---------------------------------------------------------------------------
+
+def _check_ups_topology(model: SystemModel) -> list[ModelFinding]:
+    findings = []
+
+    if model.has_ups_feed_through:
+        # Count "TO IT" and "FROM IT" breakers
+        to_it = [b for b in model.breakers
+                 if "to it" in (b.feeds_description or b.raw_text).lower()]
+        from_it = [b for b in model.breakers
+                   if "from it" in (b.feeds_description or b.raw_text).lower()]
+
+        total_to = sum(b.frame_amps or 0 for b in to_it)
+        total_from = sum(b.frame_amps or 0 for b in from_it)
+
+        findings.append(ModelFinding(
+            check_id="ENG-UPS-PATH",
+            severity="major",
+            description=(f"UPS feed-through topology detected: {len(to_it)} breakers 'TO IT' "
+                         f"({total_to}A total), {len(from_it)} breakers 'FROM IT' ({total_from}A total). "
+                         f"The UPS itself is not shown on this drawing. Confirm: UPS rating, "
+                         f"location, input/output connections, static bypass path, and whether "
+                         f"the {total_to}A out = {total_from}A return is correct or includes "
+                         f"redundancy."),
+            reference="UPS System Design",
+        ))
+
+    if model.has_bypass:
+        bypass_breakers = [b for b in model.breakers
+                           if "bypass" in (b.raw_text or "").lower()]
+        for b in bypass_breakers:
+            amps = b.frame_amps or 0
+            findings.append(ModelFinding(
+                check_id="ENG-UPS-BYPASS",
+                severity="info",
+                description=(f"UPS bypass breaker {b.designation} ({amps}A). Confirm: bypass is "
+                             f"rated for full UPS load, bypass and UPS output are synchronized "
+                             f"before transfer, and the bypass path is included in the "
+                             f"coordination study."),
+                reference="IEEE 446, UPS Design",
+                equipment_ref=b.designation,
+                page_number=b.page_number,
+            ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+#  Cable Routing — will the cables physically fit?
+# ---------------------------------------------------------------------------
+
+def _check_cable_routing(model: SystemModel) -> list[ModelFinding]:
+    findings = []
+
+    # Rack plug count vs cable routing space
+    if model.rack_plug_count > 24:
+        findings.append(ModelFinding(
+            check_id="ENG-CABLE-DENSITY",
+            severity="major",
+            description=(f"{model.rack_plug_count} rack plug circuits exiting top of panel. "
+                         f"Each circuit is a 3-phase cable. In a modular enclosure, these "
+                         f"route through the ceiling space to racks. Confirm: cable tray "
+                         f"sizing, conduit fill calculations (NEC Ch. 9 Table 1, 40% max "
+                         f"for 3+ conductors), and physical routing path from switchgear "
+                         f"to rack positions."),
+            reference="NEC Ch. 9, Constructability",
+        ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+#  Metering & Monitoring — can you see what's happening?
+# ---------------------------------------------------------------------------
+
+def _check_metering_monitoring(model: SystemModel) -> list[ModelFinding]:
+    findings = []
+
+    # Check if all breakers have monitoring but no aggregation point
+    has_modbus = any("mod tcp" in b.raw_text.lower() or "modbus" in b.raw_text.lower()
+                     for b in model.breakers)
+    has_pqm = any("pqm" in b.raw_text.lower() or "power quality" in b.raw_text.lower()
+                   for b in model.breakers)
+
+    if has_modbus and not has_pqm:
+        findings.append(ModelFinding(
+            check_id="ENG-MONITOR-AGG",
+            severity="minor",
+            description=("Breakers have Modbus TCP communication but no power quality meter "
+                         "(PQM) or monitoring aggregation point is shown. Where do the Modbus "
+                         "connections terminate? Is there a network switch in the switchgear? "
+                         "How does the BMS/EPMS collect data from these devices?"),
+            reference="Monitoring & BMS Integration",
+        ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+#  Missing Designations — every breaker needs a unique ID
+# ---------------------------------------------------------------------------
+
+def _check_missing_designations(model: SystemModel) -> list[ModelFinding]:
+    findings = []
+
+    # Check if breakers have functional names but no Q-designations
+    has_q_numbers = any(
+        re.match(r'Q\d', b.designation) for b in model.breakers
+    )
+
+    if len(model.breakers) > 3 and not has_q_numbers:
+        findings.append(ModelFinding(
+            check_id="ENG-NO-Q-DESIG",
+            severity="major",
+            description=(f"{len(model.breakers)} breakers found but none have Q-designations "
+                         f"(Q1, Q2, etc.) or unique circuit IDs. Every breaker needs a unique "
+                         f"identifier for: coordination study references, factory wiring, "
+                         f"commissioning test sheets, field labeling, and spare parts ordering. "
+                         f"Equipment is currently identified only by rating and function."),
+            reference="Drawing Standards, IEC 81346",
+        ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+#  NEC CODE CHECKS (existing)
+# ---------------------------------------------------------------------------
+
 
 # ---------------------------------------------------------------------------
 #  NEC 646 — Modular Data Centers / UL 2755

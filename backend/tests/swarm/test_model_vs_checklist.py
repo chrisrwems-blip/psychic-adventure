@@ -196,29 +196,31 @@ class TestModelVsChecklist:
         assert len(issues_caught) >= 3, \
             f"Model should catch at least 3 critical issues. Caught: {issues_caught}, Missed: {issues_missed}"
 
-    def test_model_produces_zero_noise(self, tmp_pdf_dir):
+    def test_model_produces_no_irrelevant_equipment_checks(self, tmp_pdf_dir):
         """The model should NOT produce ATS, battery, generator, cooling findings
-        on a switchgear-only document."""
+        on a switchgear-only document. Engineering reasoning checks (constructability,
+        thermal, etc.) ARE relevant and expected."""
         text = _load_text("lv_switchgear_markup_text.txt")
         pdf = _build_pdf(tmp_pdf_dir,
                          "SINGLE LINE DIAGRAM - ARMADA LEVIATHAN MDB", text)
 
         model, findings = _run_model_pipeline(pdf)
 
-        # No ATS findings
-        ats_findings = [f for f in findings if "ats" in f.check_id.lower()]
-        assert len(ats_findings) == 0, f"Model produced ATS findings on switchgear doc: {ats_findings}"
+        # No ATS-specific checklist findings
+        ats_findings = [f for f in findings if f.check_id.startswith("ATS-")]
+        assert len(ats_findings) == 0, f"Model produced ATS checklist findings on switchgear doc"
 
-        # No battery findings
-        bat_findings = [f for f in findings if "bat" in f.check_id.lower()]
-        assert len(bat_findings) == 0, f"Model produced battery findings on switchgear doc: {bat_findings}"
+        # No battery checklist findings
+        bat_findings = [f for f in findings if f.check_id.startswith("BAT-")]
+        assert len(bat_findings) == 0, f"Model produced battery checklist findings on switchgear doc"
 
-        # No generator findings
-        gen_findings = [f for f in findings if "gen" in f.check_id.lower()]
-        assert len(gen_findings) == 0, f"Model produced generator findings on switchgear doc: {gen_findings}"
+        # No generator checklist findings
+        gen_findings = [f for f in findings if f.check_id.startswith("GEN-")]
+        assert len(gen_findings) == 0, f"Model produced generator checklist findings on switchgear doc"
 
-        # No cooling findings
-        cool_findings = [f for f in findings if "cool" in f.check_id.lower() or "clg" in f.check_id.lower()]
-        assert len(cool_findings) == 0, f"Model produced cooling findings on switchgear doc: {cool_findings}"
+        # All findings should be MODEL-* or ENG-* prefixed (relevant)
+        irrelevant = [f for f in findings
+                      if not f.check_id.startswith("MODEL-") and not f.check_id.startswith("ENG-")]
+        assert len(irrelevant) == 0, f"Irrelevant findings: {[f.check_id for f in irrelevant]}"
 
-        print(f"\nZero noise confirmed: {len(findings)} total findings, all relevant to switchgear")
+        print(f"\nNo equipment-type noise: {len(findings)} findings, all MODEL-* or ENG-*")
