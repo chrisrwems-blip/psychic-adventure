@@ -134,9 +134,14 @@ def _run_vision_job(submittal_id: int):
         ]
 
         findings_count = 0
+        consecutive_failures = 0
 
         for i, (page_num, analysis_type, reason) in enumerate(pages_to_analyze):
             _running_jobs[submittal_id]["pages_complete"] = i
+
+            # Rate limit: wait between API calls
+            import time
+            time.sleep(3)
 
             try:
                 if analysis_type == "sld":
@@ -155,6 +160,14 @@ def _run_vision_job(submittal_id: int):
                             page_num, analysis_type,
                             "OK" if result else "None",
                             len(result.answer) if result and result.answer else 0)
+
+                if not result or not result.answer:
+                    consecutive_failures += 1
+                    if consecutive_failures >= 5:
+                        print("[vision-batch] 5 consecutive failures — stopping (likely out of credits)")
+                        break
+                else:
+                    consecutive_failures = 0
 
                 if result and result.answer:
                     # Save as review result

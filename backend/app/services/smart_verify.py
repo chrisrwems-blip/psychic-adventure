@@ -11,6 +11,7 @@ Cost: ~$0.01-0.03 per finding verified (only image + short prompt).
 Typical review: 30-80 findings to verify = $0.30-$2.40.
 """
 import logging
+import time
 from sqlalchemy.orm import Session
 
 from app.models.database_models import ReviewResult, Submittal
@@ -49,6 +50,7 @@ def verify_findings(db: Session, submittal_id: int) -> dict:
     upgraded = 0
     downgraded = 0
     confirmed = 0
+    consecutive_failures = 0
 
     for finding in findings:
         # Extract page number from finding details
@@ -91,13 +93,21 @@ Respond with one of these verdicts on the FIRST LINE:
 
 Then explain your reasoning in 2-3 sentences."""
 
+        # Rate limit: wait between API calls to stay under token limits
+        time.sleep(3)
+
         answer = _ask_claude(image_bytes, prompt, api_key)
         if not answer:
             print(f"[verify] No Claude response for finding {finding.id}")
+            consecutive_failures += 1
+            if consecutive_failures >= 5:
+                print("[verify] 5 consecutive failures — stopping (likely out of credits or rate limited)")
+                break
             logger.warning("[verify] No response for finding %d on page %d", finding.id, page_num)
             continue
 
         verified += 1
+        consecutive_failures = 0  # reset on success
         first_line = answer.strip().split("\n")[0].upper()
         print(f"[verify] Finding {finding.id} verdict: {first_line[:80]}")
 
