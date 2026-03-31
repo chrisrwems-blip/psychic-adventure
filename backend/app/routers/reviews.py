@@ -7,7 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFi
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.database import get_db, SessionLocal
+from app.database import get_db, get_data_dir, SessionLocal
 from app.models.database_models import ReviewResult, Submittal
 from app.models.schemas import BatchReviewRequest, BatchReviewResponse, ReviewResultResponse
 from app.services.review_service import run_review
@@ -18,7 +18,7 @@ from app.review_engine.registry import get_available_equipment_types
 
 logger = logging.getLogger(__name__)
 
-UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads")
+UPLOAD_DIR = os.path.join(get_data_dir(), "uploads")
 
 router = APIRouter(prefix="/api/reviews", tags=["reviews"])
 

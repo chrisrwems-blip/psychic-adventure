@@ -5,14 +5,14 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from app.database import get_db
+from app.database import get_db, get_data_dir
 from app.models.database_models import Submittal, ReviewComment
 from app.models.schemas import SubmittalResponse
 from app.services.pdf_parser import get_page_count
 
 router = APIRouter(prefix="/api/submittals", tags=["submittals"])
 
-UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads")
+UPLOAD_DIR = os.path.join(get_data_dir(), "uploads")
 
 
 @router.get("/", response_model=list[SubmittalResponse])
