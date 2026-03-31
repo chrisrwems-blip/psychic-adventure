@@ -28,10 +28,14 @@ function startBackend() {
   const exe = getBackendExecutable();
   if (!exe) return; // dev mode — backend started by dev.js
 
+  const backendDir = path.dirname(exe);
+  console.log(`[backend] Starting: ${exe}`);
+  console.log(`[backend] Working directory: ${backendDir}`);
+
   backendProcess = spawn(exe, [], {
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
-    cwd: app.getPath('userData'),
+    cwd: backendDir,
   });
 
   backendProcess.stdout.on('data', (data) => {
@@ -40,6 +44,10 @@ function startBackend() {
 
   backendProcess.stderr.on('data', (data) => {
     console.error(`[backend] ${data.toString().trim()}`);
+  });
+
+  backendProcess.on('error', (err) => {
+    console.error(`[backend] Failed to start: ${err.message}`);
   });
 
   backendProcess.on('exit', (code) => {
