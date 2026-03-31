@@ -1,13 +1,17 @@
 # ArcLight — Current TODO
 
-## Ready When Internet Available
-- [ ] Electron desktop app — `cd electron && npm install && npm run dev` (needs ~150MB download)
-- [ ] Ollama LLaVA vision model — `ollama pull llava` (needs ~4GB download)
+## Ready
+- [x] Electron desktop app — working in dev mode
+- [x] Ollama LLaVA — installed, works as fallback
+- [x] Gemini Vision — free tier, no cost
+- [ ] Electron production build — `npm run build` to create installer
+- [ ] First GitHub Release — triggers auto-update for future versions
 
 ## Next Up
 - [ ] Ball-in-court tracking — assigned-to dropdown on submittals (Engineer / Contractor / Owner) with dashboard indicator
 - [ ] Due date tracking — overdue highlighting on submittals past SLA
 - [ ] Export closeout report — project-level PDF summarizing all submittals and dispositions
+- [ ] Primary equipment filtering — suppress checklist findings for equipment types that are merely referenced, not the subject of the review
 
 ## Backlog
 - [ ] Saved filter views — name and save custom filter combos in comment tracker
@@ -21,13 +25,14 @@
 
 ## Done This Session
 - [x] Dark mode toggle with localStorage persistence
-- [x] Electron scaffolding (main.js, dev.js, build-backend.js, package.json)
+- [x] Electron scaffolding + electron-updater for auto-updates
+- [x] GitHub Actions CI/CD for automated releases on tag push
 - [x] ArcLight branding + icon throughout app
 - [x] Batch review — multi-file upload with parallel processing
 - [x] Comment tracker — green checkmark / red X / threaded replies / quick templates
 - [x] Clickable dashboard tiles
 - [x] SMTP email sending with auto-detected provider settings
-- [x] Settings page — email, reviewer profile, company info, review preferences
+- [x] Settings page — email, reviewer profile, company info, review preferences, vision backend selector
 - [x] Profile settings wired into emails, reports, and approval stamps
 - [x] "Reviewed by" terminology (replaced "Engineer of Record")
 - [x] User guide (docs/GUIDE.md) and API reference (docs/API.md)
@@ -36,3 +41,15 @@
 - [x] Client PDFs scrubbed from git history
 - [x] Code review cleanup — security fixes, memory leaks, DRY improvements
 - [x] build_exe.py fixed — missing hidden imports for register, rfis, feedback
+- [x] Auto-fill submittal title from filename
+- [x] Update checker — blue banner when new version available
+- [x] Vision AI — Claude, Gemini, and Ollama backends with selector
+- [x] Vision page analysis — SLD review, UL listing verification, clearance checks, nameplate reading
+- [x] Smart verification — AI-powered false positive detection on FAIL/NEEDS REVIEW findings
+- [x] Vision AI indicator badge on Run Review button
+- [x] Vision pages triggered list in review summary
+- [x] Comment export endpoint for sharing findings
+- [x] False positive fixes — ABB model parsing, pole count, UL text fragments, voltage anomaly, vision page filtering
+- [x] Rate limiting + credit exhaustion detection for API calls
+- [x] Verification skips non-technical pages and weak keyword matches
+- [x] Poppler integration for PDF-to-image conversion on Windows
