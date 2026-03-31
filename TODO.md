@@ -4,7 +4,7 @@
 - [x] Electron desktop app — working in dev mode
 - [x] Ollama LLaVA — installed, works as fallback
 - [x] Gemini Vision — free tier, no cost
-- [ ] Electron production build — `npm run build` to create installer
+- [x] Electron production build — `npm run build` to create installer
 - [ ] First GitHub Release — triggers auto-update for future versions
 
 ## Next Up
