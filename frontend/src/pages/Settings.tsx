@@ -419,7 +419,7 @@ export default function Settings() {
         )}
       </div>
 
-      {/* Vision AI Status */}
+      {/* Vision AI */}
       <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-100 dark:border-slate-700 bg-gray-50/80 dark:bg-slate-800/80">
           <div className="flex items-center gap-3">
@@ -430,19 +430,37 @@ export default function Settings() {
               </svg>
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100">Vision AI (Ollama)</h3>
-              <p className="text-xs text-gray-500 dark:text-slate-400">Analyzes scanned drawings and nameplates using local AI</p>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100">Vision AI</h3>
+              <p className="text-xs text-gray-500 dark:text-slate-400">Analyzes drawings and cut sheets using AI vision</p>
             </div>
           </div>
         </div>
-        <div className="p-6">
+        <div className="p-6 space-y-4">
           <p className="text-sm text-gray-600 dark:text-slate-400">
-            Vision analysis uses Ollama with the LLaVA model running locally on your machine. No cloud services or API keys needed.
+            ArcLight automatically detects available backends in this priority order:
           </p>
-          <div className="mt-3 text-xs text-gray-500 dark:text-slate-500 space-y-1">
-            <p>1. Install Ollama from ollama.com</p>
-            <p>2. Run: <code className="bg-gray-100 dark:bg-slate-700 px-1.5 py-0.5 rounded font-mono">ollama pull llava</code></p>
-            <p>3. ArcLight detects it automatically when running</p>
+          <div className="space-y-3">
+            <div className="flex items-start gap-3 p-3 bg-gray-50 dark:bg-slate-700/50 rounded-lg">
+              <span className="text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded">1</span>
+              <div>
+                <p className="text-sm font-medium text-gray-900 dark:text-slate-100">Claude Vision (Anthropic)</p>
+                <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Most accurate. Set <code className="bg-gray-100 dark:bg-slate-700 px-1 py-0.5 rounded font-mono">ANTHROPIC_API_KEY</code> environment variable.</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3 p-3 bg-gray-50 dark:bg-slate-700/50 rounded-lg">
+              <span className="text-xs font-bold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 px-2 py-0.5 rounded">2</span>
+              <div>
+                <p className="text-sm font-medium text-gray-900 dark:text-slate-100">Gemini Vision (Google)</p>
+                <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Fast and accurate. Set <code className="bg-gray-100 dark:bg-slate-700 px-1 py-0.5 rounded font-mono">GEMINI_API_KEY</code> environment variable. Get a key at <span className="text-blue-600 dark:text-blue-400">aistudio.google.com</span></p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3 p-3 bg-gray-50 dark:bg-slate-700/50 rounded-lg">
+              <span className="text-xs font-bold text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/30 px-2 py-0.5 rounded">3</span>
+              <div>
+                <p className="text-sm font-medium text-gray-900 dark:text-slate-100">Ollama + LLaVA (Local)</p>
+                <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Free, runs locally. Install Ollama from ollama.com, then run: <code className="bg-gray-100 dark:bg-slate-700 px-1 py-0.5 rounded font-mono">ollama pull llava</code></p>
+              </div>
+            </div>
           </div>
         </div>
       </div>

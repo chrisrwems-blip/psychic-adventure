@@ -1,8 +1,9 @@
 """Vision analyzer — uses AI vision models to read drawings and verify equipment.
 
-Supports two backends:
-1. Ollama + LLaVA (FREE, runs locally, no API key needed)
-2. Claude Vision via Anthropic API (paid, more accurate, needs API key)
+Supports three backends (checked in priority order):
+1. Claude Vision via Anthropic API (paid, most accurate, needs ANTHROPIC_API_KEY)
+2. Google Gemini Vision API (paid, accurate, needs GEMINI_API_KEY)
+3. Ollama + LLaVA (FREE, runs locally, no API key needed)
 
 Converts PDF pages to images and asks the vision model to:
 - Read equipment nameplates and ratings from drawings
@@ -27,7 +28,7 @@ class VisionResult:
     question: str
     answer: str
     confidence: str  # "high", "medium", "low"
-    backend: str  # "ollama" or "claude"
+    backend: str  # "claude", "gemini", or "ollama"
 
 
 def _page_to_image(file_path: str, page_number: int, dpi: int = 150) -> Optional[bytes]:
@@ -115,12 +116,60 @@ def _ask_claude(image_bytes: bytes, prompt: str, api_key: str) -> Optional[str]:
     return None
 
 
+def _ask_gemini(image_bytes: bytes, prompt: str, api_key: str) -> Optional[str]:
+    """Send image + prompt to Google Gemini Vision API."""
+    try:
+        import requests
+        b64 = base64.b64encode(image_bytes).decode("utf-8")
+        response = requests.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}",
+            headers={"content-type": "application/json"},
+            json={
+                "contents": [{
+                    "parts": [
+                        {
+                            "inline_data": {
+                                "mime_type": "image/png",
+                                "data": b64,
+                            },
+                        },
+                        {"text": prompt},
+                    ],
+                }],
+                "generationConfig": {
+                    "maxOutputTokens": 2000,
+                    "temperature": 0.2,
+                },
+            },
+            timeout=60,
+        )
+        if response.ok:
+            data = response.json()
+            candidates = data.get("candidates", [])
+            if candidates:
+                parts = candidates[0].get("content", {}).get("parts", [])
+                if parts:
+                    answer = parts[0].get("text", "")
+                    print(f"[vision] Gemini response ({len(answer)} chars): {answer[:100]}")
+                    return answer
+        else:
+            print(f"[vision] Gemini API error {response.status_code}: {response.text[:200]}")
+    except Exception as e:
+        print(f"[vision] Gemini API call FAILED: {e}")
+    return None
+
+
 def _get_backend():
-    """Determine which vision backend to use."""
+    """Determine which vision backend to use. Priority: Claude > Gemini > Ollama."""
     # Check for Anthropic API key
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if api_key:
         return "claude", api_key
+
+    # Check for Gemini API key
+    gemini_key = os.environ.get("GEMINI_API_KEY", "")
+    if gemini_key:
+        return "gemini", gemini_key
 
     # Check if Ollama is running locally
     try:
@@ -145,6 +194,7 @@ def is_vision_available() -> dict:
         "details": {
             "ollama": "Install Ollama (https://ollama.ai) and run: ollama pull llava",
             "claude": "Set ANTHROPIC_API_KEY environment variable",
+            "gemini": "Set GEMINI_API_KEY environment variable",
         }
     }
 
@@ -161,17 +211,21 @@ def analyze_page(file_path: str, page_number: int, prompt: str) -> Optional[Visi
 
     if backend == "claude":
         answer = _ask_claude(image_bytes, prompt, api_key)
+    elif backend == "gemini":
+        answer = _ask_gemini(image_bytes, prompt, api_key)
     else:
         answer = _ask_ollama(image_bytes, prompt)
 
     if not answer:
         return None
 
+    confidence = "high" if backend in ("claude", "gemini") else "medium"
+
     return VisionResult(
         page_number=page_number,
         question=prompt,
         answer=answer,
-        confidence="high" if backend == "claude" else "medium",
+        confidence=confidence,
         backend=backend,
     )
 
