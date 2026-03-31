@@ -118,6 +118,19 @@ class SystemModel:
     # Panels (bus ratings)
     panels: list = field(default_factory=list)  # list of dicts with designation, bus_amps, page
 
+    # Loads (from SLD load designations)
+    loads: list = field(default_factory=list)  # list of dicts {designation, description, kva, kw, page}
+
+    # QF designations (from SLD breaker numbering)
+    qf_designations: dict = field(default_factory=dict)  # {qf_num: {model, amps, description, ...}}
+
+    # Generator
+    generator_kva: Optional[float] = None
+    generator_kw: Optional[float] = None
+
+    # Source fault current
+    available_fault_current_kA: Optional[float] = None
+
     # Document quality flags
     has_afc_label: bool = False
     has_arc_flash_reference: bool = False
@@ -332,8 +345,64 @@ def build_system_model(
                     "page": eq.page_number,
                 })
 
-    # --- Physical dimensions from text ---
+    # --- SLD-specific: QF designations, loads, generator, fault current ---
     full_text = "\n".join(p.get("text", "") for p in pages)
+
+    # Parse -QF designations (ABB SLD format)
+    for m in re.finditer(r'-QF(\d+)\s+(.*?)(?=-QF|-L\d|\n\n|$)', full_text, re.DOTALL):
+        qf_num = int(m.group(1))
+        context = m.group(2).strip()[:200]
+        model.qf_designations[qf_num] = {
+            "raw": context,
+            "model": None,
+            "amps": None,
+            "description": None,
+        }
+        # Extract breaker model
+        bm = re.search(r'(E\d\.\d[HNSLV]?\d*|XT\d+[HMLNSLVBC]*\d*)', context)
+        if bm:
+            model.qf_designations[qf_num]["model"] = bm.group(1)
+        # Extract amps
+        am = re.search(r'(?:LSI|LSIG)\s*(\d+)', context)
+        if am:
+            model.qf_designations[qf_num]["amps"] = int(am.group(1))
+        # Extract description (uppercase functional name)
+        dm = re.search(r'((?:SOURCE|UPS|MECH|IT|NETWORK|CHILLER|BYPASS|PUMP|RACK|FEED|OSP)\w*(?:\s*\w+)*)', context)
+        if dm:
+            model.qf_designations[qf_num]["description"] = dm.group(1).strip()[:60]
+
+    # Parse load designations (-L{n})
+    for m in re.finditer(r'-L(\d+)\s+(.*?)(?=-L\d|-QF|-WC|$)', full_text, re.DOTALL):
+        l_num = int(m.group(1))
+        context = m.group(2).strip()[:150]
+        load = {"num": l_num, "raw": context, "description": None, "kva": None}
+        # Extract Sn= value
+        sn = re.search(r'Sn\s*=\s*([\d.]+)\s*\[?kVA\]?', context)
+        if sn:
+            load["kva"] = float(sn.group(1))
+        # Extract description
+        desc = re.search(r'(\w[\w\s\-\.]+?)(?:\s+Sn=|$)', context)
+        if desc:
+            load["description"] = desc.group(1).strip()[:60]
+        model.loads.append(load)
+
+    # Generator
+    gen_m = re.search(r'-G\d+.*?Sn\s*=\s*([\d.]+)\s*kVA.*?P\s*=\s*([\d.]+)\s*kW', full_text)
+    if gen_m:
+        model.generator_kva = float(gen_m.group(1))
+        model.generator_kw = float(gen_m.group(2))
+
+    # Source fault current
+    fc_m = re.search(r'IkLLL\s*[\n\s]*([\d.]+)', full_text)
+    if not fc_m:
+        fc_m = re.search(r'(\d{2,3})\.\d\s+\d', full_text)  # e.g., "65.0 39.0 39.0"
+    if fc_m:
+        try:
+            model.available_fault_current_kA = float(fc_m.group(1))
+        except ValueError:
+            pass
+
+    # --- Physical dimensions from text ---
     for pattern, field_name in [
         (r'width\s*[:=]\s*(?:mm\s*)?(\d[\d,\.]+)', "panel_width_mm"),
         (r'height\s*[:=]\s*(?:mm\s*)?(\d[\d,\.]+)', "panel_height_mm"),
@@ -484,6 +553,12 @@ def check_model(model: SystemModel) -> list[ModelFinding]:
         findings.extend(_check_small_wire_rule(model))
         findings.extend(_check_voltage_drop(model))
 
+    findings.extend(_check_leviathan_spec(model))
+    findings.extend(_check_abb_model_naming(model))
+    findings.extend(_check_qf_designation_issues(model))
+    findings.extend(_check_load_accounting(model))
+    findings.extend(_check_identical_equipment_ratings(model))
+    findings.extend(_check_undefined_loads(model))
     findings.extend(_check_nec_646_modular(model))
     findings.extend(_check_spd_requirements(model))
     findings.extend(_check_neutral_sizing(model))
@@ -637,20 +712,17 @@ def _check_breaker_ratings(model: SystemModel) -> list[ModelFinding]:
     return findings
 
 
-def _validate_abb_frame(model: str, frame_amps: Optional[int]) -> Optional[str]:
+def _validate_abb_frame(model_str: str, frame_amps: Optional[int]) -> Optional[str]:
     """Validate ABB breaker model against frame size limits."""
     if not frame_amps:
         return None
 
-    # ABB Tmax XT frame limits
-    xt_limits = {"XT1": 125, "XT2": 125, "XT3": 225, "XT4": 250,
-                 "XT5": 600, "XT6": 800, "XT7": 1200}
+    model_upper = model_str.upper().replace(" ", "")
 
-    model_upper = model.upper().replace(" ", "")
-    for prefix, max_amps in xt_limits.items():
-        if model_upper.startswith(prefix) and frame_amps > max_amps:
-            return (f"{model} specified at {frame_amps}A but {prefix} frame "
-                    f"maximum is {max_amps}A. This product doesn't exist.")
+    for prefix, info in ABB_XT_FRAMES.items():
+        if model_upper.startswith(prefix) and frame_amps > info["max_amps"]:
+            return (f"{model_str} specified at {frame_amps}A but {prefix} frame "
+                    f"maximum is {info['max_amps']}A. This product doesn't exist.")
 
     return None
 
@@ -1275,6 +1347,318 @@ def _check_missing_designations(model: SystemModel) -> list[ModelFinding]:
                          f"commissioning test sheets, field labeling, and spare parts ordering. "
                          f"Equipment is currently identified only by rating and function."),
             reference="Drawing Standards, IEC 81346",
+        ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+#  NEC CODE CHECKS (existing)
+# ---------------------------------------------------------------------------
+
+
+# ===========================================================================
+#  SLD ENGINEERING INTELLIGENCE
+#  Checks that require understanding the Leviathan product, ABB equipment
+#  naming, load accounting, and drawing consistency.
+# ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+#  Leviathan Product Spec Cross-Check
+# ---------------------------------------------------------------------------
+
+# Reference values from CLAUDE.md — the Leviathan spec
+LEVIATHAN_IT_LOAD_KW = 1770       # 1.77 MW per Leviathan
+LEVIATHAN_COOLING_KW = 2200       # 2.2 MW cooling capacity
+LEVIATHAN_COMPUTE_RACKS = 8       # 8× racks at 200 kW each
+LEVIATHAN_NETWORK_RACKS = 4       # 4× racks at 42.5 kW each
+LEVIATHAN_RACK_POWER_KW = 200     # per compute rack
+LEVIATHAN_NETWORK_RACK_KW = 42.5  # per network rack
+
+
+def _check_leviathan_spec(model: SystemModel) -> list[ModelFinding]:
+    """Cross-check SLD load totals against Leviathan product specification."""
+    findings = []
+
+    # Count power shelves and their total load
+    power_shelves = [ld for ld in model.loads if "powershelf" in (ld.get("description") or "").lower().replace(" ", "")]
+    if power_shelves:
+        total_it_kw = len(power_shelves) * 33  # 33kW per power shelf
+        total_it_kva = sum(ld.get("kva") or 0 for ld in power_shelves)
+
+        if total_it_kw > LEVIATHAN_IT_LOAD_KW * 1.1:
+            findings.append(ModelFinding(
+                check_id="ENG-LEV-ITLOAD",
+                severity="critical",
+                description=(f"{len(power_shelves)} power shelves × 33kW = {total_it_kw}kW IT load. "
+                             f"Leviathan spec is {LEVIATHAN_IT_LOAD_KW}kW (1.77MW). "
+                             f"SLD shows {total_it_kw/LEVIATHAN_IT_LOAD_KW*100:.0f}% of spec — "
+                             f"{total_it_kw - LEVIATHAN_IT_LOAD_KW}kW over. "
+                             f"Confirm: is the spec outdated, or is the SLD oversized?"),
+                reference="Leviathan Specification",
+            ))
+
+    # Count chillers and verify cooling capacity
+    chillers = [ld for ld in model.loads if "chiller" in (ld.get("description") or "").lower()]
+    if chillers:
+        total_chiller_kva = sum(ld.get("kva") or 0 for ld in chillers)
+        # Typical chiller PF ~0.85
+        total_chiller_kw = total_chiller_kva * 0.85
+        findings.append(ModelFinding(
+            check_id="ENG-LEV-COOLING",
+            severity="info",
+            description=(f"{len(chillers)} chillers, total {total_chiller_kva:.0f}kVA "
+                         f"(~{total_chiller_kw:.0f}kW at 0.85 PF). Leviathan cooling spec: "
+                         f"{LEVIATHAN_COOLING_KW}kW."),
+            reference="Leviathan Specification",
+        ))
+
+    # Generator vs total load
+    if model.generator_kva:
+        total_load_kw = sum(ld.get("kva", 0) or 0 for ld in model.loads) * 0.9  # rough PF
+        if model.generator_kw and total_load_kw > model.generator_kw * 1.1:
+            findings.append(ModelFinding(
+                check_id="ENG-LEV-GENSIZE",
+                severity="major",
+                description=(f"Generator rated {model.generator_kw:.0f}kW but estimated "
+                             f"total load is {total_load_kw:.0f}kW. Generator may be undersized "
+                             f"for full-load operation."),
+                reference="Generator Sizing",
+            ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+#  ABB Model Naming Intelligence
+# ---------------------------------------------------------------------------
+
+# ABB Emax 2 model variants and their meanings
+ABB_EMAX_BREAKING = {
+    "N": "Normal (lowest breaking capacity)",
+    "S": "Standard",
+    "H": "High",
+    "L": "Low instantaneous (higher breaking capacity)",
+    "V": "Very high",
+}
+
+# ABB Tmax XT frame limits (UL catalog)
+ABB_XT_FRAMES = {
+    "XT1": {"max_amps": 160, "description": "Tmax XT1 MCCB"},
+    "XT2": {"max_amps": 160, "description": "Tmax XT2 MCCB"},
+    "XT3": {"max_amps": 225, "description": "Tmax XT3 MCCB"},
+    "XT4": {"max_amps": 250, "description": "Tmax XT4 MCCB"},
+    "XT5": {"max_amps": 600, "description": "Tmax XT5 MCCB"},
+    "XT6": {"max_amps": 800, "description": "Tmax XT6 MCCB"},
+    "XT7": {"max_amps": 1200, "description": "Tmax XT7 MCCB"},
+    "XT7M": {"max_amps": 1600, "description": "Tmax XT7M Motor protection MCCB"},
+}
+
+
+def _check_abb_model_naming(model: SystemModel) -> list[ModelFinding]:
+    """Check ABB breaker model/suffix consistency and validity."""
+    findings = []
+
+    for qf_num, props in model.qf_designations.items():
+        mdl = props.get("model") or ""
+        amps = props.get("amps")
+        desc = props.get("description") or ""
+
+        if not mdl:
+            continue
+
+        # Check E4.3N vs E4.3H — N is lower breaking capacity
+        if "E4.3N" in mdl and model.available_fault_current_kA:
+            findings.append(ModelFinding(
+                check_id="ENG-ABB-BREAKING",
+                severity="critical",
+                description=(f"QF{qf_num} ({mdl}) — E4.3**N** suffix means Normal (lowest) "
+                             f"breaking capacity. With {model.available_fault_current_kA:.0f}kA "
+                             f"available fault current, verify N-type interrupting rating is "
+                             f"adequate. H-type has higher kAIC. {desc}"),
+                reference="ABB Emax 2 Product Data, NEC 110.9",
+                equipment_ref=f"QF{qf_num}",
+            ))
+
+        # Check XT7M vs XT7 — M is motor protection variant
+        if "XT7M" in mdl.upper():
+            findings.append(ModelFinding(
+                check_id="ENG-ABB-VARIANT",
+                severity="major",
+                description=(f"QF{qf_num} ({mdl}) — XT7**M** is the motor protection variant. "
+                             f"All other UPS input breakers use XT7L. Why is this one different? "
+                             f"Confirm: is UIB A feeding a motor load, or should this be XT7L? "
+                             f"{desc}"),
+                reference="ABB Tmax XT Product Data",
+                equipment_ref=f"QF{qf_num}",
+            ))
+
+        # Check XT7L at 1600A — standard XT7 max is 1200A, XT7M goes to 1600A
+        xt_match = re.match(r'XT(\d+)([HMLNSLVBC]*)', mdl.upper())
+        if xt_match:
+            xt_num = f"XT{xt_match.group(1)}"
+            suffix = xt_match.group(2)
+            key = f"{xt_num}M" if "M" in suffix else xt_num
+
+            frame_info = ABB_XT_FRAMES.get(key) or ABB_XT_FRAMES.get(xt_num)
+            if frame_info and amps and amps > frame_info["max_amps"]:
+                findings.append(ModelFinding(
+                    check_id="ENG-ABB-FRAME",
+                    severity="major",
+                    description=(f"QF{qf_num} ({mdl} {amps}A) — {key} frame maximum is "
+                                 f"{frame_info['max_amps']}A. {amps}A exceeds this. "
+                                 f"Verify product availability. {desc}"),
+                    reference="ABB Tmax XT Product Data",
+                    equipment_ref=f"QF{qf_num}",
+                ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+#  QF Designation Issues — duplicates, gaps, missing breaker models
+# ---------------------------------------------------------------------------
+
+def _check_qf_designation_issues(model: SystemModel) -> list[ModelFinding]:
+    """Check for duplicate functional names, missing models, inconsistencies."""
+    findings = []
+
+    # Find QF breakers with no model specified
+    missing_model = []
+    for qf_num, props in model.qf_designations.items():
+        if not props.get("model") and props.get("description"):
+            missing_model.append((qf_num, props.get("description")))
+
+    if missing_model:
+        items = ", ".join(f"QF{n} ({d})" for n, d in missing_model[:5])
+        findings.append(ModelFinding(
+            check_id="ENG-QF-NOMODEL",
+            severity="critical",
+            description=(f"{len(missing_model)} breaker(s) have no model specified: {items}. "
+                         f"Cannot verify frame size, breaking capacity, or trip unit configuration "
+                         f"without the breaker model."),
+            reference="Submittal Requirements",
+        ))
+
+    # Find duplicate functional descriptions (e.g., two breakers both called "UPS UIB A")
+    desc_map = {}  # description -> list of QF numbers
+    for qf_num, props in model.qf_designations.items():
+        desc = props.get("description")
+        if desc and len(desc) > 3:
+            key = desc.upper().replace(" ", "")
+            desc_map.setdefault(key, []).append((qf_num, desc))
+
+    for key, items in desc_map.items():
+        if len(items) > 1:
+            qf_list = ", ".join(f"QF{n}" for n, _ in items)
+            desc = items[0][1]
+            findings.append(ModelFinding(
+                check_id="ENG-QF-DUPLICATE",
+                severity="critical",
+                description=(f"Duplicate designation '{desc}' on {len(items)} breakers: {qf_list}. "
+                             f"Each breaker must have a unique functional name for the "
+                             f"coordination study, factory wiring, and field identification."),
+                reference="Drawing Consistency, IEC 81346",
+            ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+#  Load Accounting — total kVA/kW vs source capacity
+# ---------------------------------------------------------------------------
+
+def _check_load_accounting(model: SystemModel) -> list[ModelFinding]:
+    """Verify load totals make sense against source capacity."""
+    findings = []
+
+    if not model.loads:
+        return findings
+
+    # Find loads with no description
+    unnamed = [ld for ld in model.loads if not ld.get("description") and ld.get("kva")]
+    if unnamed:
+        items = ", ".join(f"L{ld['num']} ({ld.get('kva', '?')}kVA)" for ld in unnamed[:5])
+        findings.append(ModelFinding(
+            check_id="ENG-LOAD-UNNAMED",
+            severity="major",
+            description=(f"{len(unnamed)} load(s) have kVA ratings but no description: {items}. "
+                         f"What are these loads? Cannot verify sizing without knowing the load type."),
+            reference="Drawing Completeness",
+        ))
+
+    # Check for "TO BE DEFINED" loads
+    full_text_lower = " ".join(ld.get("raw", "") for ld in model.loads).lower()
+    # Also check the broader document text
+    has_tbd_loads = any(
+        "to be defined" in (ld.get("description") or "").lower() or
+        "tbd" in (ld.get("description") or "").lower()
+        for ld in model.loads
+    )
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+#  Identical Equipment Rating Discrepancies
+# ---------------------------------------------------------------------------
+
+def _check_identical_equipment_ratings(model: SystemModel) -> list[ModelFinding]:
+    """Flag groups of supposedly identical equipment with different ratings."""
+    findings = []
+
+    # Group loads by base name (e.g., CHILLER1, CHILLER2, CHILLER3)
+    groups = {}
+    for ld in model.loads:
+        desc = ld.get("description") or ""
+        # Strip trailing numbers to get base name
+        base = re.sub(r'\d+$', '', desc).strip()
+        if base and len(base) > 2:
+            groups.setdefault(base, []).append(ld)
+
+    for base, items in groups.items():
+        if len(items) < 2:
+            continue
+        kvas = [ld.get("kva") for ld in items if ld.get("kva")]
+        if len(set(kvas)) > 1 and len(kvas) >= 2:
+            details = ", ".join(f"L{ld['num']} ({ld.get('kva', '?')}kVA)" for ld in items)
+            findings.append(ModelFinding(
+                check_id="ENG-EQUIP-MISMATCH",
+                severity="major",
+                description=(f"'{base}' equipment has different ratings: {details}. "
+                             f"Supposedly identical equipment should have the same Sn value. "
+                             f"Different ratings suggest different models — verify spare parts "
+                             f"interchangeability and confirm intentional."),
+                reference="Equipment Consistency",
+            ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+#  Undefined / Incomplete Loads
+# ---------------------------------------------------------------------------
+
+def _check_undefined_loads(model: SystemModel) -> list[ModelFinding]:
+    """Flag 'LOADS TO BE DEFINED' and similar incomplete items."""
+    findings = []
+
+    # Search for TBD patterns in the full text available via loads and breakers
+    all_text = " ".join(
+        [ld.get("raw", "") for ld in model.loads] +
+        [props.get("raw", "") for props in model.qf_designations.values()]
+    ).lower()
+
+    if "loads to be defined" in all_text or "to be defined" in all_text:
+        findings.append(ModelFinding(
+            check_id="ENG-LOAD-TBD",
+            severity="major",
+            description=("'LOADS TO BE DEFINED' found on the SLD. These undefined loads affect "
+                         "total load calculation, generator sizing, cable sizing, and breaker "
+                         "coordination. When will they be defined? What is the estimated load "
+                         "for design contingency?"),
+            reference="Design Completeness",
         ))
 
     return findings
