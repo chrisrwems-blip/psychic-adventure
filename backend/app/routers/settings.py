@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from app.database import get_data_dir
 from app.services.smtp_service import (
     detect_smtp_settings,
     save_settings,
@@ -14,7 +15,7 @@ from app.services.smtp_service import (
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
-PROFILE_FILE = Path(__file__).parent.parent.parent / "profile_settings.json"
+PROFILE_FILE = Path(get_data_dir()) / "profile_settings.json"
 
 
 class EmailSettingsRequest(BaseModel):

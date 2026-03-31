@@ -7,7 +7,9 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from pathlib import Path
 
-SETTINGS_FILE = Path(__file__).parent.parent.parent / "email_settings.json"
+from app.database import get_data_dir
+
+SETTINGS_FILE = Path(get_data_dir()) / "email_settings.json"
 
 PROVIDER_PRESETS = {
     "gmail.com": {"host": "smtp.gmail.com", "port": 587},

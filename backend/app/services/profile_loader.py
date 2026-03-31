@@ -2,7 +2,9 @@
 import json
 from pathlib import Path
 
-PROFILE_FILE = Path(__file__).parent.parent.parent / "profile_settings.json"
+from app.database import get_data_dir
+
+PROFILE_FILE = Path(get_data_dir()) / "profile_settings.json"
 
 _DEFAULTS = {
     "reviewer_name": "",
