@@ -13,6 +13,7 @@ _DEFAULTS = {
     "default_jurisdiction": "auto",
     "review_sla_days": 5,
     "report_min_severity": "minor",
+    "vision_backend": "auto",
 }
 
 

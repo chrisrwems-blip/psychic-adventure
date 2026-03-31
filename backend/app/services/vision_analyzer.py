@@ -160,37 +160,66 @@ def _ask_gemini(image_bytes: bytes, prompt: str, api_key: str) -> Optional[str]:
 
 
 def _get_backend():
-    """Determine which vision backend to use. Priority: Claude > Gemini > Ollama."""
-    # Check for Anthropic API key
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if api_key:
-        return "claude", api_key
+    """Determine which vision backend to use based on user preference."""
+    from app.services.profile_loader import get_profile
+    preference = get_profile().get("vision_backend", "auto")
 
-    # Check for Gemini API key
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
     gemini_key = os.environ.get("GEMINI_API_KEY", "")
+
+    # If user selected a specific backend, use it (if key available)
+    if preference == "claude" and anthropic_key:
+        return "claude", anthropic_key
+    if preference == "gemini" and gemini_key:
+        return "gemini", gemini_key
+    if preference == "ollama":
+        if _check_ollama():
+            return "ollama", None
+        return None, None
+
+    # Auto mode: priority Claude > Gemini > Ollama
+    if anthropic_key:
+        return "claude", anthropic_key
     if gemini_key:
         return "gemini", gemini_key
+    if _check_ollama():
+        return "ollama", None
 
-    # Check if Ollama is running locally
+    return None, None
+
+
+def _check_ollama() -> bool:
+    """Check if Ollama is running with LLaVA model."""
     try:
         import requests
         resp = requests.get("http://localhost:11434/api/tags", timeout=3)
         if resp.ok:
             models = [m["name"] for m in resp.json().get("models", [])]
-            if any("llava" in m for m in models):
-                return "ollama", None
+            return any("llava" in m for m in models)
     except Exception:
         pass
-
-    return None, None
+    return False
 
 
 def is_vision_available() -> dict:
     """Check if any vision backend is available."""
+    from app.services.profile_loader import get_profile
+    preference = get_profile().get("vision_backend", "auto")
     backend, key = _get_backend()
+
+    available_backends = []
+    if os.environ.get("ANTHROPIC_API_KEY", ""):
+        available_backends.append("claude")
+    if os.environ.get("GEMINI_API_KEY", ""):
+        available_backends.append("gemini")
+    if _check_ollama():
+        available_backends.append("ollama")
+
     return {
         "available": backend is not None,
         "backend": backend or "none",
+        "preference": preference,
+        "available_backends": available_backends,
         "details": {
             "ollama": "Install Ollama (https://ollama.ai) and run: ollama pull llava",
             "claude": "Set ANTHROPIC_API_KEY environment variable",

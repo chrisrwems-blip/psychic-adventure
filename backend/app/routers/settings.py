@@ -91,6 +91,7 @@ class ProfileSettings(BaseModel):
     default_jurisdiction: str = "auto"
     review_sla_days: int = 5
     report_min_severity: str = "minor"
+    vision_backend: str = "auto"
 
 
 @router.get("/profile")

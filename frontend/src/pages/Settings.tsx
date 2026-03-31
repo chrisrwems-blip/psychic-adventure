@@ -12,7 +12,7 @@ export default function Settings() {
   const [profile, setProfile] = useState({
     reviewer_name: '', reviewer_title: '',
     company_name: '', company_address: '', company_phone: '',
-    default_jurisdiction: 'auto', review_sla_days: 5, report_min_severity: 'minor',
+    default_jurisdiction: 'auto', review_sla_days: 5, report_min_severity: 'minor', vision_backend: 'auto',
   });
   const [profileSaved, setProfileSaved] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
@@ -436,8 +436,22 @@ export default function Settings() {
           </div>
         </div>
         <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">Preferred Backend</label>
+            <select
+              value={profile.vision_backend}
+              onChange={(e) => { setProfile({ ...profile, vision_backend: e.target.value }); }}
+              className="w-full max-w-xs border border-gray-300 dark:border-slate-600 rounded-lg px-3.5 py-2.5 text-sm text-gray-900 dark:text-slate-200 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+            >
+              <option value="auto">Auto (best available)</option>
+              <option value="claude">Claude Vision (Anthropic)</option>
+              <option value="gemini">Gemini Vision (Google)</option>
+              <option value="ollama">Ollama LLaVA (Local)</option>
+            </select>
+            <p className="mt-1 text-xs text-gray-400 dark:text-slate-500">Save profile after changing to apply.</p>
+          </div>
           <p className="text-sm text-gray-600 dark:text-slate-400">
-            ArcLight automatically detects available backends in this priority order:
+            In auto mode, ArcLight uses the first available backend:
           </p>
           <div className="space-y-3">
             <div className="flex items-start gap-3 p-3 bg-gray-50 dark:bg-slate-700/50 rounded-lg">
