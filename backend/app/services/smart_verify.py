@@ -52,11 +52,54 @@ def verify_findings(db: Session, submittal_id: int) -> dict:
     confirmed = 0
     consecutive_failures = 0
 
+    # Cache page classifications to avoid re-checking same pages
+    _page_cache = {}
+
+    def _is_technical_page(page_num: int) -> bool:
+        """Check if a page is worth verifying (not a title page, TOC, etc.)."""
+        if page_num in _page_cache:
+            return _page_cache[page_num]
+        try:
+            from app.services.pdf_parser import extract_text_by_page
+            pages = extract_text_by_page(submittal.file_path)
+            for p in pages:
+                text_lower = p.get("text", "").lower()
+                pn = p.get("page", 0)
+                # Skip pages with very little text (title pages, section dividers)
+                if len(text_lower) < 200:
+                    _page_cache[pn] = False
+                    continue
+                # Skip pages that are clearly not electrical drawings/schedules
+                skip_keywords = ["table of contents", "revision history", "heat load",
+                                 "revision record", "document control", "copyright",
+                                 "subject to change"]
+                if any(kw in text_lower for kw in skip_keywords):
+                    _page_cache[pn] = False
+                    continue
+                _page_cache[pn] = True
+        except Exception:
+            pass
+        return _page_cache.get(page_num, True)
+
+    # Only verify cross-reference findings (these have specific page-level evidence)
+    # and skip generic checklist "partially addressed" items where the page reference
+    # is just the best keyword match (often wrong page)
     for finding in findings:
         # Extract page number from finding details
         page_num = _extract_page_number(finding.details or finding.check_name)
         if not page_num:
             print(f"[verify] Skipping finding {finding.id}: no page number found")
+            continue
+
+        # Skip non-technical pages (title, TOC, revision sheets, heat loads)
+        if not _is_technical_page(page_num):
+            print(f"[verify] Skipping finding {finding.id}: page {page_num} is not a technical page")
+            continue
+
+        # Skip "partially addressed" findings — these have weak page assignments
+        details = (finding.details or "").lower()
+        if "partially addressed" in details and "confirm:" in details:
+            print(f"[verify] Skipping finding {finding.id}: partially addressed item (weak page match)")
             continue
 
         print(f"[verify] Verifying finding {finding.id} on page {page_num}: {finding.check_name[:60]}")
