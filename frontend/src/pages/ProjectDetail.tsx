@@ -382,12 +382,11 @@ export default function ProjectDetail() {
                 {/* Form Fields */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="col-span-2 sm:col-span-1">
-                    <label className="block text-xs font-semibold text-gray-600 dark:text-slate-400 mb-1.5">Title {files.length <= 1 && <span className="text-red-400">*</span>}</label>
+                    <label className="block text-xs font-semibold text-gray-600 dark:text-slate-400 mb-1.5">Title <span className="text-gray-400 dark:text-slate-500 font-normal">(auto-filled from filename if blank)</span></label>
                     <input
-                      placeholder={files.length > 1 ? "Auto-derived from filenames" : "e.g. Main Switchgear MSB-1"}
+                      placeholder={files.length > 0 ? files[0].name.replace(/\.pdf$/i, '') : "e.g. Main Switchgear MSB-1"}
                       value={form.title}
                       onChange={(e) => setForm({ ...form, title: e.target.value })}
-                      required={files.length <= 1}
                       className="w-full border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-800 placeholder:text-gray-400 dark:placeholder:text-slate-500 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
                     />
                   </div>
@@ -472,7 +471,7 @@ export default function ProjectDetail() {
                   </button>
                   <button
                     type="submit"
-                    disabled={uploading || files.length === 0 || (files.length === 1 && !form.title)}
+                    disabled={uploading || files.length === 0}
                     className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-sm hover:bg-blue-700 active:bg-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
                   >
                     {uploading ? (

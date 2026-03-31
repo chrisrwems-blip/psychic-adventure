@@ -47,7 +47,7 @@ def list_submittals(project_id: int = None, db: Session = Depends(get_db)):
 async def upload_submittal(
     file: UploadFile = File(...),
     project_id: int = Form(...),
-    title: str = Form(...),
+    title: str = Form(""),
     equipment_type: str = Form("auto"),
     submittal_number: str = Form(None),
     manufacturer: str = Form(None),
@@ -64,6 +64,10 @@ async def upload_submittal(
     file_path = os.path.join(project_dir, file.filename)
     with open(file_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
+
+    # Default title from filename if not provided
+    if not title:
+        title = os.path.splitext(file.filename)[0]
 
     file_size = os.path.getsize(file_path)
     page_count = get_page_count(file_path)
