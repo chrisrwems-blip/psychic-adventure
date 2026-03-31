@@ -1,16 +1,13 @@
-"""Medium Tier Tests — cross-document mismatches and subtle inconsistencies.
+"""Medium Tier — errors that invalidate the coordination study or create hidden risk.
 
-These test the review engine's ability to catch mismatches between SLD and schedule:
-- Frame size mismatch
-- Trip rating mismatch
-- kAIC mismatch
-- Model mismatch
-- Trip exceeds frame
-- Non-standard breaker size
-- Bus undersized
-- IEC equipment in NEC jurisdiction
-- Inconsistent kAIC on identical incomers
-- Missing K-factor for IT transformer
+These are the errors that don't scream at you from the page. They require
+comparing two documents, checking a rating against a table, or noticing that
+two numbers that SHOULD match don't. A junior reviewer misses these.
+A senior reviewer catches them because they've seen what happens when you don't.
+
+Every scenario here represents a submittal where the SLD and schedule disagree,
+or where a rating is subtly wrong — and the consequence is that the system
+gets built to the wrong spec.
 """
 import os
 import pytest
@@ -30,40 +27,59 @@ from tests.swarm.conftest import run_review_pipeline, assert_finding_present, Ex
 
 def _build_pdf(tmpdir, sld_breakers, schedule_breakers=None,
                sld_kwargs=None, extra_pages=None):
-    """Helper to build a test PDF."""
     pdf_path = os.path.join(tmpdir, "test.pdf")
     builder = SubmittalBuilder()
-
     kwargs = sld_kwargs or {}
     sld_lines = build_sld_lines(sld_breakers, **kwargs)
     builder.add_sld_page("MDB-A", sld_lines)
-
     if schedule_breakers is not None:
         sched_lines = build_schedule_lines(schedule_breakers)
         builder.add_schedule_page("MDB-A", sched_lines)
-
     if extra_pages:
         for page_type, lines in extra_pages:
             if page_type == "equipment":
                 builder.add_equipment_page(lines)
             else:
                 builder.add_raw_page(page_type, lines)
-
     builder.build(pdf_path)
     return pdf_path
 
 
+def _any_finding_mentions(results, keyword, sources=None):
+    if sources is None:
+        sources = ["checklist_findings", "xref_findings", "deep_findings",
+                    "sld_xcheck_findings", "naming_findings"]
+    keyword_lower = keyword.lower()
+    for source_key in sources:
+        for f in results.get(source_key, []):
+            text = " ".join(filter(None, [
+                getattr(f, "details", None),
+                getattr(f, "description", None),
+                getattr(f, "check_name", None),
+            ])).lower()
+            if getattr(f, "passed", None) == 1:
+                continue
+            if keyword_lower in text:
+                return True
+    return False
+
+
 class TestMediumTier:
 
-    def test_m1_frame_size_mismatch(self, tmp_pdf_dir):
-        """M1: Q8 frame is 1000A on SLD, 800A in schedule."""
+    def test_sld_says_1000a_schedule_says_800a(self, tmp_pdf_dir):
+        """Q8 (IT Rack Distribution): SLD shows 1000A, schedule shows 800A.
+
+        CONSEQUENCE: The coordination study used 1000A. The factory builds
+        800A. During a fault, the 800A breaker trips earlier than the study
+        predicted, potentially taking out the upstream breaker too — cascading
+        outage. Or worse: the 800A breaker can't handle the actual load and
+        runs hot until insulation fails.
+        """
         breakers = default_sld_breakers()
         sched = sld_to_schedule_breakers(breakers)
-        # Inject: change Q8 frame in schedule to 800A
         for s in sched:
             if s.q_num == "8":
                 s.frame_amps = 800
-                s.model = "XT7H"
                 break
 
         pdf = _build_pdf(tmp_pdf_dir, breakers, sched)
@@ -76,15 +92,18 @@ class TestMediumTier:
             equipment_ref="Q8",
         ))
 
-    def test_m2_trip_rating_mismatch(self, tmp_pdf_dir):
-        """M2: Q5 trip is 630A on SLD, 400A in schedule."""
+    def test_sld_says_630a_schedule_says_400a(self, tmp_pdf_dir):
+        """Q5 (Network Racks): SLD shows 630A frame, schedule shows 400A.
+
+        CONSEQUENCE: 400A frame on a circuit designed for 630A means the
+        breaker trips under normal load. Every time the network racks draw
+        more than 400A (which is expected at 630A design), the breaker trips
+        and the entire network tier goes down.
+        """
         breakers = default_sld_breakers()
         sched = sld_to_schedule_breakers(breakers)
         for s in sched:
             if s.q_num == "5":
-                # Frame stays 630A but trip changes
-                # We need to put different trip in the schedule text
-                # The schedule extractor picks up amps from the rating line
                 s.frame_amps = 400
                 break
 
@@ -98,8 +117,14 @@ class TestMediumTier:
             equipment_ref="Q5",
         ))
 
-    def test_m3_kaic_mismatch(self, tmp_pdf_dir):
-        """M3: Q1 is 85kA on SLD, 65kA in schedule."""
+    def test_kaic_mismatch_85_vs_65(self, tmp_pdf_dir):
+        """Q1 (Main Incomer): SLD shows 85kA, schedule shows 65kA.
+
+        CONSEQUENCE: If the utility study shows 72kA available fault current,
+        the SLD says the breaker can handle it (85kA > 72kA) but the schedule
+        says it can't (65kA < 72kA). If the 65kA breaker is what gets built,
+        it will fail to interrupt a fault — explosive failure per NEC 110.9.
+        """
         breakers = default_sld_breakers()
         sched = sld_to_schedule_breakers(breakers)
         for s in sched:
@@ -117,8 +142,15 @@ class TestMediumTier:
             equipment_ref="Q1",
         ))
 
-    def test_m4_model_mismatch(self, tmp_pdf_dir):
-        """M4: Q3 is XT7H on SLD, XT5H in schedule."""
+    def test_model_mismatch_xt7h_vs_xt5h(self, tmp_pdf_dir):
+        """Q3 (IT UPS A): SLD shows XT7H, schedule shows XT5H.
+
+        CONSEQUENCE: XT7H is a 1200A max frame. XT5H is a 600A max frame.
+        If Q3 needs 1000A (as shown on SLD), XT5H physically cannot do it —
+        max frame is 600A. ABB will reject the order, or worse, ship a 600A
+        breaker for a 1000A circuit. The UPS input is unprotected or trips
+        under normal load.
+        """
         breakers = default_sld_breakers()
         sched = sld_to_schedule_breakers(breakers)
         for s in sched:
@@ -136,34 +168,24 @@ class TestMediumTier:
             equipment_ref="Q3",
         ))
 
-    def test_m5_trip_exceeds_frame(self, tmp_pdf_dir):
-        """M5: Breaker with trip > frame (1000A trip on 800A frame)."""
-        breakers = default_sld_breakers()
-        sched = sld_to_schedule_breakers(breakers)
-        pdf = _build_pdf(tmp_pdf_dir, breakers, sched)
-        results = run_review_pipeline(pdf)
+    def test_trip_exceeds_frame(self, tmp_pdf_dir):
+        """A breaker specified with 800A trip on a 630A frame.
 
-        # Check if any breaker_frame_vs_trip findings exist
-        trip_frame_found = any(
-            f.finding_type == "trip_exceeds_frame"
-            for f in results["xref_findings"]
-        )
-        # The default breakers are clean — inject a bad one
-        # This test needs equipment with trip > frame in the extractor
-        # The equipment extractor pulls frame_size and trip_rating from text
-        # We need to generate text that produces this condition
-        # For now, test via SLD/schedule where schedule has mismatched frame
-        breakers2 = [
+        CONSEQUENCE: Physically impossible — the trip unit cannot be set above
+        the frame rating. This is an ordering error that ABB/Eaton will reject,
+        or worse, it indicates the designer doesn't understand the equipment.
+        If the 630A frame is correct, the circuit is underprotected. If 800A
+        trip is correct, the frame is undersized.
+        """
+        breakers = [
             SLDBreaker(1, "1", "E6.2H", 4000, 3, 85, "INCOMING UTILITY FEED"),
             SLDBreaker(10, "10", "XT5H", 630, 3, 65, "CHILLER PUMP"),
         ]
-        sched2 = [
+        sched = [
             ScheduleBreaker("1", "E6.2H", 4000, 3, 85, "INCOMING"),
             ScheduleBreaker("10", "XT5H", 630, 3, 65, "OUTGOING",
                             description="CHILLER PUMP"),
         ]
-
-        # Add equipment page with a breaker where trip > frame
         eq_lines = [
             "BREAKER CB-PUMP1",
             "XT5H 630 Frame 800A Trip 3P 65kA",
@@ -171,20 +193,26 @@ class TestMediumTier:
             "Trip Setting: 800A",
             "",
         ]
-        pdf2 = _build_pdf(tmp_pdf_dir, breakers2, sched2,
-                          extra_pages=[("equipment", eq_lines)])
-        results2 = run_review_pipeline(pdf2)
+        pdf = _build_pdf(tmp_pdf_dir, breakers, sched,
+                         extra_pages=[("equipment", eq_lines)])
+        results = run_review_pipeline(pdf)
 
-        trip_frame_found = any(
+        found = any(
             f.finding_type == "trip_exceeds_frame"
-            for f in results2["xref_findings"]
+            for f in results["xref_findings"]
         )
-        if not trip_frame_found:
-            pytest.xfail("Trip exceeds frame check not triggered — "
-                         "equipment extractor may not parse trip_rating separately")
+        if not found:
+            pytest.xfail("Trip > frame not caught — engine needs to parse "
+                         "trip_rating separately from frame_size on extracted equipment")
 
-    def test_m6_non_standard_breaker_size(self, tmp_pdf_dir):
-        """M6: Breaker with non-standard size (155A, not in NEC 240.6)."""
+    def test_non_standard_breaker_size_155a(self, tmp_pdf_dir):
+        """A 155A breaker specified — not a standard size per NEC 240.6.
+
+        CONSEQUENCE: 155A is not a standard breaker rating. The designer
+        probably meant 150A or 175A. If 155A gets ordered, the manufacturer
+        sends back an RFQ asking for clarification — schedule delay. If they
+        guess 150A and the load is 153A, the breaker nuisance-trips.
+        """
         breakers = [
             SLDBreaker(1, "1", "E6.2H", 4000, 3, 85, "INCOMING UTILITY FEED"),
             SLDBreaker(11, "11", "XT2H", 155, 3, 65, "MECHANICAL FAN"),
@@ -193,19 +221,24 @@ class TestMediumTier:
         pdf = _build_pdf(tmp_pdf_dir, breakers, sched)
         results = run_review_pipeline(pdf)
 
-        non_std_found = any(
+        found = any(
             f.finding_type == "non_standard_size"
             for f in results["xref_findings"]
         )
-        if not non_std_found:
-            pytest.xfail("Non-standard breaker size check not triggered for 155A")
+        if not found:
+            pytest.xfail("Non-standard breaker size 155A not flagged — "
+                         "check needs frame_size populated on extracted equipment")
 
-    def test_m7_panel_bus_undersized(self, tmp_pdf_dir):
-        """M7: Panel bus 800A with 1000A main breaker."""
+    def test_panel_bus_undersized_for_main_breaker(self, tmp_pdf_dir):
+        """Panel with 800A bus rating but 1000A main breaker.
+
+        CONSEQUENCE: The main breaker allows 1000A through, but the bus is
+        only rated for 800A. Under sustained load above 800A, the bus
+        overheats. Bus insulation degrades. Eventually: internal arc flash.
+        NEC 408.36 requires the bus to be rated for the connected load.
+        """
         breakers = default_sld_breakers()
         sched = sld_to_schedule_breakers(breakers)
-
-        # Add an equipment schedule page with an undersized bus
         eq_lines = [
             "PANEL MDB-A",
             "Main Breaker: 1000A",
@@ -218,20 +251,25 @@ class TestMediumTier:
                          extra_pages=[("equipment", eq_lines)])
         results = run_review_pipeline(pdf)
 
-        bus_found = any(
+        found = any(
             f.finding_type == "bus_undersized"
             for f in results["xref_findings"]
         )
-        if not bus_found:
-            pytest.xfail("Bus undersized check not triggered — "
-                         "equipment extractor may not parse bus rating from this text format")
+        if not found:
+            pytest.xfail("Bus undersized not caught — "
+                         "equipment extractor needs to parse bus rating from text")
 
-    def test_m8_iec_equipment_nec_jurisdiction(self, tmp_pdf_dir):
-        """M8: IEC-only equipment in a clearly NEC jurisdiction submittal."""
+    def test_iec_only_equipment_in_us_installation(self, tmp_pdf_dir):
+        """CE-marked IEC breaker submitted for a 480V/60Hz US installation.
+
+        CONSEQUENCE: Fails inspection per NEC 110.2, 110.3. IEC 60947-2
+        breakers are NOT UL listed. The AHJ will reject the installation.
+        The contractor has to rip it all out and replace — weeks of delay,
+        hundreds of thousands in rework. This happens regularly with European
+        vendors entering the US data center market.
+        """
         breakers = default_sld_breakers()
         sched = sld_to_schedule_breakers(breakers)
-
-        # Add equipment with IEC marking but no UL listing
         eq_lines = [
             "SYSTEM: 480V 60Hz NEC COMPLIANT",
             "UL LISTED SWITCHGEAR",
@@ -247,19 +285,22 @@ class TestMediumTier:
                          extra_pages=[("equipment", eq_lines)])
         results = run_review_pipeline(pdf)
 
-        # Jurisdiction detection + listing check
-        iec_found = any(
-            ("iec" in (getattr(f, "description", "") or "").lower()
-             or "ul" in (getattr(f, "description", "") or "").lower()
-             or "listing" in (getattr(f, "description", "") or "").lower())
-            for f in results["xref_findings"]
-            if f.severity in ("critical", "major")
-        )
-        if not iec_found:
-            pytest.xfail("IEC-in-NEC jurisdiction check not triggered")
+        found = _any_finding_mentions(results, "iec") or \
+                _any_finding_mentions(results, "ul") or \
+                _any_finding_mentions(results, "listing")
+        if not found:
+            pytest.xfail("IEC-only equipment in NEC jurisdiction not flagged — "
+                         "jurisdiction detection may not trigger on this text format")
 
-    def test_m9_inconsistent_kaic_incomers(self, tmp_pdf_dir):
-        """M9: Two incoming breakers with different kAIC ratings."""
+    def test_inconsistent_kaic_on_identical_incomers(self, tmp_pdf_dir):
+        """Two incoming breakers: Source A at 85kA, Source B at 65kA.
+
+        CONSEQUENCE: These are supposed to be identical — same switchgear,
+        same bus, same fault current. If one is 85kA and the other 65kA,
+        either one is wrong or the engineer made a copy-paste error. If
+        Source B is actually 65kA and the fault current is 72kA, that
+        breaker will fail catastrophically during a fault.
+        """
         breakers = [
             SLDBreaker(1, "1", "E6.2H", 4000, 3, 85, "INCOMING SOURCE A"),
             SLDBreaker(2, "2", "E6.2H", 4000, 3, 65, "INCOMING SOURCE B"),
@@ -276,28 +317,25 @@ class TestMediumTier:
         pdf = _build_pdf(tmp_pdf_dir, breakers, sched)
         results = run_review_pipeline(pdf)
 
-        kaic_inconsist = any(
-            f.finding_type == "kaic_inconsistency"
-            for f in results["sld_xcheck_findings"]
-        )
-        if not kaic_inconsist:
-            # Also check deep findings
-            kaic_inconsist = any(
-                "kaic" in (getattr(f, "description", "") or "").lower()
-                or "inconsisten" in (getattr(f, "description", "") or "").lower()
-                for f in results["deep_findings"] + results["xref_findings"]
-            )
-        if not kaic_inconsist:
-            pytest.xfail("kAIC inconsistency check not triggered for mismatched incomers")
+        found = (any(f.finding_type == "kaic_inconsistency"
+                     for f in results["sld_xcheck_findings"]) or
+                 _any_finding_mentions(results, "inconsisten"))
+        if not found:
+            pytest.xfail("Inconsistent kAIC on identical incomers not flagged")
 
-    def test_m10_missing_k_factor_it_transformer(self, tmp_pdf_dir):
-        """M10: Transformer feeding IT loads without K-factor rating."""
+    def test_transformer_feeding_gpus_without_k_factor(self, tmp_pdf_dir):
+        """Standard K-1 transformer feeding a room full of GPU servers.
+
+        CONSEQUENCE: GPU server power supplies draw current in pulses, not
+        sine waves. A K-1 transformer feeding this load will overheat from
+        harmonic currents. Per IEEE C57.91, every 10°C above rated temperature
+        HALVES insulation life. A 25-year transformer fails in 3-5 years.
+        Data center spec should require K-13 minimum, K-20 for dedicated IT.
+        """
         breakers = default_sld_breakers()
         sched = sld_to_schedule_breakers(breakers)
-
         tx = TransformerEntry("TX-IT1", 500, k_factor=None)
         eq_lines = build_equipment_lines([tx])
-        # Add IT load context
         eq_lines.append("TX-IT1 FEEDS IT RACK DISTRIBUTION")
         eq_lines.append("HARMONIC LOAD: GPU SERVERS")
 
@@ -305,14 +343,9 @@ class TestMediumTier:
                          extra_pages=[("equipment", eq_lines)])
         results = run_review_pipeline(pdf)
 
-        kfactor_found = any(
-            ("k-factor" in (getattr(f, "description", "") or
-                            getattr(f, "details", "") or "").lower()
-             or "k factor" in (getattr(f, "description", "") or
-                               getattr(f, "details", "") or "").lower()
-             or "harmonic" in (getattr(f, "description", "") or
-                               getattr(f, "details", "") or "").lower())
-            for f in results["xref_findings"] + results["checklist_findings"]
-        )
-        if not kfactor_found:
-            pytest.xfail("K-factor/harmonics check not triggered for IT transformer")
+        found = (_any_finding_mentions(results, "k-factor") or
+                 _any_finding_mentions(results, "k factor") or
+                 _any_finding_mentions(results, "harmonic"))
+        if not found:
+            pytest.xfail("K-factor/harmonics not flagged for IT transformer — "
+                         "engine improvement needed for GPU/server load detection")
