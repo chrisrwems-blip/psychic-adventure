@@ -440,8 +440,16 @@ def _search_for_stated_afc(nodes: dict, equipment: list) -> Optional[float]:
     return None
 
 
-def _propagate_down(nodes: dict, node_id: str, afc_kA: float, equipment: list):
-    """Recursively propagate AFC down the tree."""
+def _propagate_down(nodes: dict, node_id: str, afc_kA: float, equipment: list,
+                    _visited: set = None):
+    """Recursively propagate AFC down the tree, with cycle detection."""
+    if _visited is None:
+        _visited = set()
+
+    if node_id in _visited:
+        return  # Cycle detected — coupler/tie topologies create loops
+    _visited.add(node_id)
+
     node = nodes.get(node_id)
     if not node:
         return
@@ -465,7 +473,7 @@ def _propagate_down(nodes: dict, node_id: str, afc_kA: float, equipment: list):
             if kva > 0 and imp > 0:
                 child_afc = transformer_secondary_fault_current(kva, sec_v, imp) / 1000  # Convert to kA
 
-        _propagate_down(nodes, child_id, child_afc, equipment)
+        _propagate_down(nodes, child_id, child_afc, equipment, _visited)
 
 
 def _find_equipment(equipment: list, designation: str) -> Optional[ExtractedEquipment]:

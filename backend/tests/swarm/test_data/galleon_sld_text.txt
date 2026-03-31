@@ -1,0 +1,44 @@
+6777- Armada MDC North America -Galleon Electrical Single Line Diagram Submittal - REV A
+Date: 30.01.2024
+Submitted By: Eoin Farrelly Sean Buggle Oisin Quinn Alex Houlden
+
+Project Details
+Project Name: Armada - Modular Data Center - Galleon
+Project Number: 6777
+Location: North America
+Description: 5no. 60Hz UL Certified MDCs
+
+Revision History
+Item # Submittal Rev # Date (D.M.Y) Description
+1 A 30.01.2024 Initial submission for review/approval.
+
+Single Line Diagram
+
+NOTES
+1. Total IT Load = 90kW
+2. MDB kA = 36kA
+
+6777-SLD-01
+
+250AF/250AT TP MCCB
+250AF/250AT TP MCCB
+
+SOCKETS 20A 1P
+LIGHTS 15A 1P
+ELRS 15A 1P
+LIGHTS 15A 1P
+LIGHTS 15A 1P
+LIGHTS 15A 1P
+SOCKETS 20A 1P
+SOCKETS 20A 1P
+FAP 20A 1P
+BMS 20A 1P
+
+40A 3P DX
+40A 3P DX
+40A 3P DX
+40A 3P DX
+
+20A 3P FAN
+20A 3P FAN
+20A 3P FAN
