@@ -128,6 +128,13 @@ class SystemModel:
     has_fuse_schedule: bool = False
     has_ul_listing: bool = False
     has_iec_only: bool = False
+    has_spd_reference: bool = False
+    has_neutral_sizing_reference: bool = False
+    has_working_clearance_reference: bool = False
+    has_grounding_reference: bool = False  # NEC 250.30
+    has_energy_storage: bool = False  # batteries, BESS, UPS batteries
+    has_thermal_runaway_protection: bool = False
+    is_modular_data_center: bool = False  # NEC 646, UL 2755
     unconfirmed_items: list = field(default_factory=list)  # ["INTERLOCKING TBC", ...]
 
     # Raw counts for context
@@ -339,6 +346,40 @@ def build_system_model(
     model.has_iec_only = (any(kw in full_text_lower for kw in iec_only_keywords)
                           and not model.has_ul_listing)
 
+    model.has_spd_reference = any(kw in full_text_lower for kw in [
+        "surge protective", "spd", "surge protection", "surge arrester",
+        "tvss", "transient voltage",
+    ])
+
+    model.has_neutral_sizing_reference = any(kw in full_text_lower for kw in [
+        "200% neutral", "double neutral", "oversized neutral",
+        "neutral sized for harmonics", "harmonic neutral",
+    ])
+
+    model.has_working_clearance_reference = any(kw in full_text_lower for kw in [
+        "working clearance", "working space", "110.26",
+    ])
+
+    model.has_grounding_reference = any(kw in full_text_lower for kw in [
+        "250.30", "separately derived", "system bonding jumper",
+        "grounding electrode conductor", "bonding jumper",
+    ])
+
+    model.has_energy_storage = any(kw in full_text_lower for kw in [
+        "battery", "bess", "energy storage", "lithium", "vrla",
+        "li-ion", "lifepo4",
+    ])
+
+    model.has_thermal_runaway_protection = any(kw in full_text_lower for kw in [
+        "thermal runaway", "nfpa 855", "ul 9540", "deflagration",
+        "explosion control",
+    ])
+
+    model.is_modular_data_center = any(kw in full_text_lower for kw in [
+        "modular data center", "mdc", "prefabricated", "ul 2755",
+        "article 646", "nec 646", "factory built",
+    ])
+
     # Detect unconfirmed items (TBC, TBD, TBA)
     for match in re.finditer(r'(\b[\w\s]{3,30})\s+(TBC|TBD|TBA)\b', full_text_lower, re.IGNORECASE):
         item = match.group(0).strip()
@@ -382,6 +423,13 @@ def check_model(model: SystemModel) -> list[ModelFinding]:
         findings.extend(_check_small_wire_rule(model))
         findings.extend(_check_voltage_drop(model))
 
+    findings.extend(_check_nec_646_modular(model))
+    findings.extend(_check_spd_requirements(model))
+    findings.extend(_check_neutral_sizing(model))
+    findings.extend(_check_terminal_temperature(model))
+    findings.extend(_check_working_clearance(model))
+    findings.extend(_check_separately_derived_grounding(model))
+    findings.extend(_check_energy_storage(model))
     findings.extend(_check_document_completeness(model))
     findings.extend(_check_jurisdiction_issues(model))
     findings.extend(_check_unconfirmed_items(model))
@@ -832,6 +880,205 @@ def _check_voltage_drop(model: SystemModel) -> list[ModelFinding]:
                 equipment_ref=c.designation,
                 page_number=c.page_number,
             ))
+
+
+# ---------------------------------------------------------------------------
+#  Document Completeness Checks
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+#  NEC 646 — Modular Data Centers / UL 2755
+# ---------------------------------------------------------------------------
+
+def _check_nec_646_modular(model: SystemModel) -> list[ModelFinding]:
+    """NEC Article 646 and UL 2755 requirements for modular data centers."""
+    findings = []
+
+    if not model.is_modular_data_center:
+        return findings
+
+    # SCCR must be documented for the entire assembly
+    has_any_sccr = any(b.interrupting_kA for b in model.breakers)
+    if not has_any_sccr:
+        findings.append(ModelFinding(
+            check_id="MODEL-MDC-SCCR",
+            severity="critical",
+            description=("Modular data center (NEC 646) — assembly SCCR not documented. "
+                         "NEC 646.7 requires short-circuit ratings for the complete MDC. "
+                         "Every component's SCCR must meet or exceed available fault current."),
+            reference="NEC 646.7, UL 2755",
+        ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+#  Surge Protection (NEC 242, 700.8)
+# ---------------------------------------------------------------------------
+
+def _check_spd_requirements(model: SystemModel) -> list[ModelFinding]:
+    """NEC 700.8 requires SPDs on emergency system switchgear."""
+    findings = []
+
+    has_large_system = any((b.frame_amps or 0) >= 800 for b in model.breakers)
+    if has_large_system and not model.has_spd_reference:
+        findings.append(ModelFinding(
+            check_id="MODEL-SPD",
+            severity="major",
+            description=("No surge protective device (SPD) referenced. NEC 700.8 requires "
+                         "a listed SPD on all emergency system switchgear, switchboards, and "
+                         "panelboards. Best practice: SPDs at every distribution voltage level."),
+            reference="NEC 700.8, 242",
+        ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+#  Neutral Conductor Sizing (Harmonics)
+# ---------------------------------------------------------------------------
+
+def _check_neutral_sizing(model: SystemModel) -> list[ModelFinding]:
+    """200% neutral required for IT loads with triplen harmonics."""
+    findings = []
+
+    # Only relevant if there are IT/compute loads
+    has_it_loads = any(
+        tx.is_feeding_it_loads for tx in model.transformers
+    ) or any(
+        "it " in (b.feeds_description or "").lower() or
+        "rack" in (b.feeds_description or "").lower() or
+        "server" in (b.feeds_description or "").lower() or
+        "gpu" in (b.feeds_description or "").lower()
+        for b in model.breakers
+    )
+
+    if has_it_loads and not model.has_neutral_sizing_reference:
+        findings.append(ModelFinding(
+            check_id="MODEL-NEUTRAL",
+            severity="major",
+            description=("IT/compute loads detected but no 200% neutral sizing referenced. "
+                         "Non-linear loads (SMPS, GPU servers) generate triplen harmonics "
+                         "(3rd, 9th, 15th) that add arithmetically in the neutral conductor. "
+                         "Neutral current can reach 150-200% of phase current. Per NEC "
+                         "310.15(C)(1), neutral must be treated as current-carrying conductor "
+                         "and sized accordingly. Industry standard: 200% neutral."),
+            reference="NEC 310.15(C)(1), 220.61, IEEE C57.110",
+        ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+#  Terminal Temperature Rating (NEC 110.14(C))
+# ---------------------------------------------------------------------------
+
+def _check_terminal_temperature(model: SystemModel) -> list[ModelFinding]:
+    """Flag conductors that may be sized at 90°C when terminals are 75°C."""
+    findings = []
+
+    for c in model.cables:
+        if not c.conductor_size_normalized or not c.ampacity:
+            continue
+        # Check if conductor ampacity suggests 90°C rating was used
+        # NEC 310.16 75°C column should be the reference for most terminations
+        size = c.conductor_size_normalized
+        if size in NEC_310_16_75C:
+            amp_75c = NEC_310_16_75C[size]
+            if c.ampacity and c.ampacity > amp_75c:
+                findings.append(ModelFinding(
+                    check_id="MODEL-TERM-TEMP",
+                    severity="major",
+                    description=(f"{c.designation} — conductor ampacity ({c.ampacity}A) exceeds "
+                                 f"75°C column value ({amp_75c}A) for #{size}. Per NEC 110.14(C), "
+                                 f"ampacity must be based on the lowest temperature rating of "
+                                 f"conductor or terminal. Most terminals are rated 75°C. Verify "
+                                 f"terminal temperature rating before using 90°C ampacity."),
+                    reference="NEC 110.14(C)",
+                    equipment_ref=c.designation,
+                    page_number=c.page_number,
+                ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+#  Working Clearance (NEC 110.26)
+# ---------------------------------------------------------------------------
+
+def _check_working_clearance(model: SystemModel) -> list[ModelFinding]:
+    """Flag if no working clearance reference on a large switchgear submittal."""
+    findings = []
+
+    has_large_gear = any((b.frame_amps or 0) >= 400 for b in model.breakers)
+    if has_large_gear and not model.has_working_clearance_reference:
+        voltage = model.system_voltage or 480
+        if voltage <= 600:
+            req_depth = 42  # inches, Condition 2
+        else:
+            req_depth = 48
+        findings.append(ModelFinding(
+            check_id="MODEL-CLEARANCE",
+            severity="major",
+            description=(f"No working clearance reference found. NEC 110.26 requires "
+                         f"{req_depth}\" depth (Condition 2) for equipment at {voltage}V. "
+                         f"Minimum 30\" width, 78\" headroom. Verify switchgear dimensions "
+                         f"allow adequate clearance in modular enclosure."),
+            reference="NEC 110.26",
+        ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+#  Separately Derived System Grounding (NEC 250.30)
+# ---------------------------------------------------------------------------
+
+def _check_separately_derived_grounding(model: SystemModel) -> list[ModelFinding]:
+    """Transformers ≥15kVA must address NEC 250.30 grounding."""
+    findings = []
+
+    large_transformers = [tx for tx in model.transformers if tx.kva and tx.kva >= 15]
+    if large_transformers and not model.has_grounding_reference:
+        desigs = ", ".join(tx.designation for tx in large_transformers[:3])
+        findings.append(ModelFinding(
+            check_id="MODEL-SDS-GROUND",
+            severity="major",
+            description=(f"Transformer(s) {desigs} — no NEC 250.30 separately derived system "
+                         f"grounding referenced. Requires: system bonding jumper (at source OR "
+                         f"first disconnect, not both), supply-side bonding jumper, grounding "
+                         f"electrode conductor. Incorrect bonding causes nuisance GFP tripping."),
+            reference="NEC 250.30",
+        ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+#  Energy Storage / Battery Systems (NEC 706, NFPA 855)
+# ---------------------------------------------------------------------------
+
+def _check_energy_storage(model: SystemModel) -> list[ModelFinding]:
+    """Battery/BESS requirements per NEC 706 and NFPA 855."""
+    findings = []
+
+    if not model.has_energy_storage:
+        return findings
+
+    # Lithium-ion without thermal runaway protection
+    if not model.has_thermal_runaway_protection:
+        findings.append(ModelFinding(
+            check_id="MODEL-BATT-THERMAL",
+            severity="critical",
+            description=("Energy storage system detected but no thermal runaway protection "
+                         "documented. NFPA 855 requires fire suppression, ventilation for "
+                         "flammable gas dispersal, and explosion control for lithium-ion "
+                         "installations. UL 9540A large-scale fire testing required if "
+                         "group energy exceeds 50 kWh."),
+            reference="NFPA 855, NEC 706, UL 9540A",
+        ))
+
+    return findings
 
 
 # ---------------------------------------------------------------------------
