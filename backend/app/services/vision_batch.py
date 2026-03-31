@@ -82,11 +82,27 @@ def _run_vision_job(submittal_id: int):
         # Identify pages that need vision analysis
         pages_to_analyze = []
 
+        # Skip patterns for pages that waste API calls
+        SKIP_TEXT_PATTERNS = [
+            "table of contents", "index", "© 20", "copyright",
+            "subject to change without notice", "all rights reserved",
+        ]
+
         for page_data in pages:
             page_num = page_data["page"]
             page_type = page_data.get("page_type", "unknown")
             text_len = len(page_data.get("text", ""))
             text_lower = page_data.get("text_lower", page_data.get("text", "").lower())
+
+            # Skip pages that are clearly not useful for vision analysis
+            if page_type in (PageType.COVER_SHEET, PageType.TABLE_OF_CONTENTS):
+                continue
+            # Skip very short pages that are just section headers or title pages
+            if text_len < 100 and not any(kw in text_lower for kw in ["single line", "sld", "one line", "general arrangement"]):
+                continue
+            # Skip pages with TOC/copyright patterns (section dividers, last pages of datasheets)
+            if text_len < 200 and any(p in text_lower for p in SKIP_TEXT_PATTERNS):
+                continue
 
             # SLD pages — always analyze visually regardless of text
             if page_type == PageType.SLD:
@@ -96,22 +112,17 @@ def _run_vision_job(submittal_id: int):
             elif page_type == PageType.PLAN_DRAWING:
                 pages_to_analyze.append((page_num, "clearance", "Layout drawing — clearance check"))
 
-            # Cut sheets / data sheets — check UL listing
-            elif page_type == PageType.CUT_SHEET:
+            # Cut sheets / data sheets — check UL listing (only if page has substantial content)
+            elif page_type == PageType.CUT_SHEET and text_len > 200:
                 pages_to_analyze.append((page_num, "ul_listing", "Cut sheet — UL listing verification"))
 
             # Pages that look like drawings (low text, not a schedule or cover)
-            elif text_len < 500 and page_type not in (
-                PageType.COVER_SHEET, PageType.TABLE_OF_CONTENTS,
+            elif text_len < 500 and text_len > 100 and page_type not in (
                 PageType.PANEL_SCHEDULE, PageType.EQUIPMENT_SCHEDULE,
                 PageType.CABLE_SCHEDULE, PageType.LOAD_SCHEDULE,
                 PageType.GENERAL_NOTES, PageType.SPEC_SECTION,
             ):
                 pages_to_analyze.append((page_num, "nameplate", "Drawing page — equipment identification"))
-
-            # Pages with nameplate keywords
-            elif any(kw in text_lower for kw in ["nameplate", "rating plate", "certified", "ul listed"]):
-                pages_to_analyze.append((page_num, "nameplate", "Contains nameplate/certification data"))
 
         # Cap at 50 pages to keep processing reasonable
         pages_to_analyze = pages_to_analyze[:50]

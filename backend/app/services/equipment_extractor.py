@@ -162,6 +162,10 @@ def _extract_breakers(text: str, text_lower: str, page: int) -> list[ExtractedEq
             # Skip UL file numbers: pattern like "E" followed by 5+ digits with no dot
             if re.match(r'^E\d{5,}$', desig):
                 continue
+            # Skip voltage readings misidentified as frame sizes (e.g., "XT5 480V")
+            following = text[match.end():min(match.end()+5, len(text))].lower()
+            if following.startswith('v') or following.startswith(' v'):
+                continue
 
             context = text_lower[max(0, match.start()-50):min(match.end()+150, len(text_lower))]
 
@@ -187,9 +191,9 @@ def _extract_breakers(text: str, text_lower: str, page: int) -> list[ExtractedEq
             if ir_match:
                 eq.interrupting_rating = f"{ir_match.group(1)}kA"
 
-            # Poles
-            pole_match = re.search(r'(\d)\s*[pP](?:ole)?', context)
-            if pole_match:
+            # Poles — require explicit "3P", "4P", "3-pole", etc. but NOT model prefixes like "XT5"
+            pole_match = re.search(r'(?<![xXtT])(\d)\s*[pP](?:ole)?(?:\s|,|$)', context)
+            if pole_match and pole_match.group(1) in ('1', '2', '3', '4'):
                 eq.poles = pole_match.group(1)
 
             results.append(eq)

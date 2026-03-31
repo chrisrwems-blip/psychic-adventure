@@ -12,6 +12,8 @@ Design principles:
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
+import re
+
 from app.models.database_models import Submittal, ReviewResult, ReviewComment, SubmittalStatus
 from app.review_engine.registry import get_checker, CHECKER_REGISTRY
 from app.services.pdf_parser import extract_text_by_page, extract_metadata_by_page, extract_metadata
@@ -236,6 +238,17 @@ def run_full_review(db: Session, submittal_id: int, has_spec: bool = False) -> d
             has_iec_only = ("iec" in raw or "ce " in raw) and "ul" not in raw
             # Only flag if this is a major piece of equipment (breaker, panel, transformer)
             if has_iec_only and eq.equipment_type in ("breaker", "panel", "transformer"):
+                # Skip text fragments that aren't real equipment designations
+                desig = eq.designation or ""
+                if len(desig) < 3 or not any(c.isdigit() for c in desig):
+                    continue
+                # Real equipment designations have model number patterns (letter+digit like XT2, E6.2, etc.)
+                # Word fragments from OCR don't (PPROVED, PPLEMEN, etc.)
+                if not re.search(r'[A-Z]{1,3}[\d.]', desig, re.IGNORECASE):
+                    continue
+                # Skip if designation is all letters (no digits) — not a real model number
+                if re.match(r'^[A-Za-z]+$', desig):
+                    continue
                 # Check if UL listing exists elsewhere for this equipment
                 model_text = eq.model or eq.designation
                 if model_text.lower() not in full_text_lower or "ul" not in full_text_lower:

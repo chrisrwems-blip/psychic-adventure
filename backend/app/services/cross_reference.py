@@ -232,6 +232,9 @@ def _check_transformer_protection(equipment: list, topology: Optional[SystemTopo
 def _check_voltage_consistency(equipment: list) -> list[CrossRefFinding]:
     findings = []
     expected = {120, 208, 230, 240, 277, 400, 415, 440, 480, 600, 690, 4160, 12470, 13200, 13800}
+    # Reasonable voltage range for electrical systems (skip obvious misparses)
+    VOLTAGE_MIN = 100
+    VOLTAGE_MAX = 15000
     voltages_seen = set()
 
     for eq in equipment:
@@ -239,7 +242,7 @@ def _check_voltage_consistency(equipment: list) -> list[CrossRefFinding]:
             vs = re.findall(r'\d{3,5}', eq.voltage)
             for v in vs:
                 v_int = int(v)
-                if v_int > 100:
+                if VOLTAGE_MIN < v_int < VOLTAGE_MAX:
                     voltages_seen.add(v_int)
 
     for v in voltages_seen:
